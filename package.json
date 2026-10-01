@@ -1,0 +1,14 @@
+{
+  "name": "polytock",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A WebGL corner-cut cube clock with draggable rings, physics, a stopwatch and a timer.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "cf deploy"
+  },
+  "devDependencies": {
+    "cf": "^1.0.0-beta.10",
+    "wrangler": "^4.145.0"
+  }
+}

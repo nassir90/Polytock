@@ -1,0 +1,15 @@
+{
+  "name": "polytock",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-09-01",
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+  "routes": [
+    { "pattern": "mpts.ie/games/polytock", "zone_name": "mpts.ie" },
+    { "pattern": "mpts.ie/games/polytock/*", "zone_name": "mpts.ie" }
+  ],
+  "workers_dev": false
+}

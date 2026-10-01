@@ -1,0 +1,1128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Polytock: a WebGL corner-cut cube clock with draggable rings, physics, a stopwatch and a timer.">
+<title>Polytock</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+
+  :root {
+    --ground: #d9d4cb;
+    --ink: #1c1d20;
+    --ink-soft: #5d5a55;
+    --glyph: #cfeee6;
+    --alarm: #b5482f;
+    --panel: rgba(28, 29, 32, 0.86);
+    --panel-line: rgba(207, 238, 230, 0.16);
+    --display: "Jost", "Futura", "Avenir Next", system-ui, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    color-scheme: light;
+  }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--display);
+    overflow: hidden;
+  }
+  #stage { position: fixed; inset: 0; }
+  #stage canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+
+  .caption {
+    position: fixed;
+    top: calc(env(safe-area-inset-top, 0px) + 20px);
+    left: 20px;
+    right: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    pointer-events: none;
+  }
+  .caption h1 {
+    margin: 0;
+    font-weight: 500;
+    font-size: 15px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  .caption p {
+    margin: 4px 0 0;
+    font-size: 13px;
+    color: var(--ink-soft);
+    max-width: 34ch;
+  }
+  .readout-wrap { text-align: right; }
+  .readout-label {
+    font: 500 11px var(--display);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+  }
+  .readout {
+    font-family: var(--mono);
+    font-size: 28px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+  .readout.alarm { color: var(--alarm); animation: blink 0.9s steps(2, jump-none) infinite; }
+  @keyframes blink { 50% { opacity: 0.25; } }
+
+  .bar {
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 18px);
+    width: min(720px, calc(100% - 32px));
+    box-sizing: border-box;
+    background: var(--panel);
+    color: var(--glyph);
+    border: 1px solid var(--panel-line);
+    border-radius: 10px;
+    padding: 10px 12px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 12px;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+  .modes { display: flex; gap: 2px; background: rgba(255,255,255,0.06); border-radius: 7px; padding: 2px; }
+  .modes button, .chip {
+    font: 500 12px/1 var(--display);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--glyph);
+    background: transparent;
+    border: 0;
+    border-radius: 5px;
+    padding: 8px 11px;
+    cursor: pointer;
+  }
+  .modes button { opacity: 0.62; }
+  .modes button[aria-pressed="true"] { background: rgba(207,238,230,0.14); opacity: 1; }
+  .chip { border: 1px solid var(--panel-line); border-radius: 7px; }
+  .chip[aria-pressed="false"] { opacity: 0.62; }
+  .chip[aria-pressed="true"] { background: rgba(207,238,230,0.14); }
+  .chip.primary { background: var(--glyph); color: var(--ink); border-color: var(--glyph); min-width: 6.5em; }
+  .modes button:focus-visible, .chip:focus-visible { outline: 2px solid var(--glyph); outline-offset: 2px; }
+  .panel { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; flex: 1 1 auto; min-width: 0; }
+  .tools { display: flex; gap: 6px; margin-left: auto; }
+  .shelf {
+    position: fixed;
+    left: 20px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 8px;
+    background: var(--panel);
+    border: 1px solid var(--panel-line);
+    border-radius: 10px;
+    color: var(--glyph);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+  .shelf-label {
+    font: 500 10px var(--display);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    opacity: 0.7;
+  }
+  .shape-btn {
+    width: 40px;
+    height: 40px;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    color: var(--glyph);
+    background: transparent;
+    border: 1px solid var(--panel-line);
+    border-radius: 7px;
+    cursor: pointer;
+  }
+  .shape-btn:hover { background: rgba(207,238,230,0.1); }
+  .shape-btn:focus-visible { outline: 2px solid var(--glyph); outline-offset: 2px; }
+  .shape-btn svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; }
+  .shape-btn.text { font: 500 10px var(--display); letter-spacing: 0.08em; text-transform: uppercase; height: 28px; }
+  .status {
+    position: fixed; inset: 0; display: grid; place-items: center;
+    font: 400 13px var(--mono); color: var(--ink-soft); pointer-events: none;
+  }
+  @media (max-width: 520px) {
+    .caption p { display: none; }
+    .readout { font-size: 22px; }
+    .tools { margin-left: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .readout.alarm { animation: none; }
+  }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div class="status" id="status">Machining the cube</div>
+
+<header class="caption">
+  <div>
+    <h1>Polytock</h1>
+    <p id="hint">Drag a ring to set the time. Drag a body to pull it around. Drop more clocks from the left.</p>
+  </div>
+  <div class="readout-wrap">
+    <div class="readout-label" id="readout-label">Clock</div>
+    <div class="readout" id="readout">--:--:--</div>
+  </div>
+</header>
+
+<nav class="shelf" aria-label="Drop another clock">
+  <div class="shelf-label">Drop</div>
+  <button class="shape-btn" data-shape="pyramid" aria-label="Pyramid clock" title="Pyramid clock">
+    <svg viewBox="0 0 24 24"><path d="M12 3.5 L20.5 19.5 H3.5 Z"/></svg>
+  </button>
+  <button class="shape-btn" data-shape="square" aria-label="Cube clock" title="Cube clock">
+    <svg viewBox="0 0 24 24"><rect x="4.5" y="4.5" width="15" height="15"/></svg>
+  </button>
+  <button class="shape-btn" data-shape="pentagon" aria-label="Pentagonal clock" title="Pentagonal clock">
+    <svg viewBox="0 0 24 24"><path d="M12 3.5 L20.6 9.7 L17.3 19.8 H6.7 L3.4 9.7 Z"/></svg>
+  </button>
+  <button class="shape-btn" data-shape="hexagon" aria-label="Hexagonal clock" title="Hexagonal clock">
+    <svg viewBox="0 0 24 24"><path d="M12 3 L19.8 7.5 V16.5 L12 21 L4.2 16.5 V7.5 Z"/></svg>
+  </button>
+  <button class="shape-btn text" id="clear-shapes">Clear</button>
+</nav>
+
+<div class="bar" role="group" aria-label="Clock controls">
+  <div class="modes" role="group" aria-label="Mode">
+    <button id="tab-clock" aria-pressed="true">Clock</button>
+    <button id="tab-stopwatch" aria-pressed="false">Stopwatch</button>
+    <button id="tab-timer" aria-pressed="false">Timer</button>
+  </div>
+
+  <div class="panel" id="panel-clock">
+    <button class="chip" id="clock-fast" aria-pressed="false">Fast</button>
+    <button class="chip" id="clock-now" hidden>Back to now</button>
+  </div>
+
+  <div class="panel" id="panel-stopwatch" hidden>
+    <button class="chip primary" id="sw-start">Start</button>
+    <button class="chip" id="sw-reset">Reset</button>
+  </div>
+
+  <div class="panel" id="panel-timer" hidden>
+    <button class="chip" data-minutes="1">1m</button>
+    <button class="chip" data-minutes="5">5m</button>
+    <button class="chip" data-minutes="10">10m</button>
+    <button class="chip" data-minutes="25">25m</button>
+    <button class="chip primary" id="tm-start">Start</button>
+    <button class="chip" id="tm-reset">Reset</button>
+  </div>
+
+  <div class="tools">
+    <button class="chip" id="upright">Stand up</button>
+    <button class="chip" id="spin" aria-pressed="true">Orbit</button>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/",
+    "cannon-es": "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import * as CANNON from 'cannon-es';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { ConvexGeometry } from 'three/addons/geometries/ConvexGeometry.js';
+import { ConvexHull } from 'three/addons/math/ConvexHull.js';
+
+const css = getComputedStyle(document.documentElement);
+const token = (n) => css.getPropertyValue(n).trim();
+
+const P = {
+  cutFraction: 0.48,
+  bodyChamfer: 0.06,
+  ringChamfer: 0.022,
+  hour:   { s0: 0.02, r0: 0.80, s1: 0.42, r1: 0.46 },
+  minute: { s0: 0.43, r0: 0.58, s1: 0.82, r1: 0.25 },
+  cap:    { s0: 0.83, r0: 0.33, s1: 1.26, r1: 0.0 },
+};
+
+const SQ3 = Math.sqrt(3);
+const TWO_PI = Math.PI * 2;
+const UP = new THREE.Vector3(0, 1, 0);
+const REFERENCE_INRADIUS = 1.56 / Math.sqrt(6);
+const CUBE_TURN = -Math.PI / 4;
+
+const radial = (phi) => new THREE.Vector3(Math.sin(phi), -Math.cos(phi), 0);
+const tangent = (phi) => new THREE.Vector3(Math.cos(phi), Math.sin(phi), 0);
+
+const stage = document.getElementById('stage');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.VSMShadowMap;
+stage.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const groundColor = new THREE.Color(token('--ground'));
+scene.background = groundColor;
+scene.fog = new THREE.Fog(groundColor, 12, 26);
+
+function studioEnvironment() {
+  const room = new RoomEnvironment();
+  const strip = (w, h, intensity, pos) => {
+    const m = new THREE.Mesh(
+      new THREE.PlaneGeometry(w, h),
+      new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 1, 1).multiplyScalar(intensity), side: THREE.DoubleSide })
+    );
+    m.position.copy(pos);
+    m.lookAt(0, 0, 0);
+    room.add(m);
+  };
+  strip(1.4, 9, 7, new THREE.Vector3(-7, 5, 4));
+  strip(1.0, 9, 5, new THREE.Vector3(7, 4, -3));
+  strip(6, 2.5, 0.55, new THREE.Vector3(0, 9, 0));
+  return room;
+}
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(studioEnvironment(), 0.03).texture;
+scene.environmentIntensity = 0.62;
+
+const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 100);
+camera.position.set(-3.4, 2.6, 6.4);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.25, 0);
+controls.enableDamping = true;
+controls.enablePan = false;
+controls.minDistance = 4;
+controls.maxDistance = 16;
+controls.maxPolarAngle = Math.PI * 0.53;
+controls.autoRotateSpeed = 0.6;
+
+const key = new THREE.DirectionalLight(0xfff1df, 2.3);
+key.position.set(-4.5, 9, 5.5);
+key.castShadow = true;
+key.shadow.mapSize.set(4096, 4096);
+key.shadow.camera.left = -9; key.shadow.camera.right = 9;
+key.shadow.camera.top = 9; key.shadow.camera.bottom = -9;
+key.shadow.camera.near = 2; key.shadow.camera.far = 26;
+key.shadow.radius = 9;
+key.shadow.blurSamples = 24;
+key.shadow.bias = -0.0006;
+scene.add(key, key.target);
+const rim = new THREE.DirectionalLight(0xd6e4ff, 1.4);
+rim.position.set(5, 2.5, -6);
+scene.add(rim);
+scene.add(new THREE.HemisphereLight(0xfff8ee, 0x8a7b6a, 0.42));
+
+const floor = new THREE.Mesh(
+  new THREE.CircleGeometry(30, 64),
+  new THREE.MeshStandardMaterial({ color: groundColor, roughness: 0.92 })
+);
+floor.rotation.x = -Math.PI / 2;
+floor.position.y = -1;
+floor.receiveShadow = true;
+scene.add(floor);
+
+const BODY = token('--ink');
+const GLYPH = token('--glyph');
+const bodyMat = new THREE.MeshPhysicalMaterial({
+  color: BODY, roughness: 0.42, metalness: 0.12,
+  clearcoat: 0.25, clearcoatRoughness: 0.4,
+});
+const glyphMat = new THREE.MeshStandardMaterial({ color: GLYPH, roughness: 0.6, emissive: GLYPH, emissiveIntensity: 0.3 });
+
+function cornersOf(planes) {
+  const pts = [];
+  const m = new THREE.Matrix3();
+  const v = new THREE.Vector3();
+  for (let i = 0; i < planes.length; i++)
+    for (let j = i + 1; j < planes.length; j++)
+      for (let k = j + 1; k < planes.length; k++) {
+        const a = planes[i], b = planes[j], c = planes[k];
+        m.set(a.n.x, a.n.y, a.n.z, b.n.x, b.n.y, b.n.z, c.n.x, c.n.y, c.n.z);
+        if (Math.abs(m.determinant()) < 1e-8) continue;
+        v.set(a.d, b.d, c.d).applyMatrix3(m.clone().invert());
+        if (!planes.every((p) => p.n.dot(v) <= p.d + 1e-6)) continue;
+        if (pts.some((q) => q.p.distanceToSquared(v) < 1e-12)) continue;
+        pts.push({ p: v.clone(), on: planes.map((p, idx) => (Math.abs(p.n.dot(v) - p.d) < 1e-5 ? idx : -1)).filter((x) => x >= 0) });
+      }
+  return pts;
+}
+
+function chamferedSolid(planes, chamfer) {
+  const corners = cornersOf(planes);
+  const extra = [];
+  for (let i = 0; i < planes.length; i++)
+    for (let j = i + 1; j < planes.length; j++) {
+      const shared = corners.filter((c) => c.on.includes(i) && c.on.includes(j));
+      if (shared.length < 2) continue;
+      const sum = planes[i].n.clone().add(planes[j].n);
+      const len = sum.length();
+      if (len < 1e-6 || planes[i].n.dot(planes[j].n) > 0.995) continue;
+      const n = sum.divideScalar(len);
+      extra.push({ n, d: n.dot(shared[0].p) - chamfer, bridges: [i, j] });
+    }
+  const geo = new ConvexGeometry(cornersOf(planes.concat(extra)).map((c) => c.p));
+  roundBevels(geo, planes, extra);
+  return geo;
+}
+
+function roundBevels(geo, faces, bevels) {
+  const pos = geo.attributes.position, nrm = geo.attributes.normal;
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+  const fn = new THREE.Vector3(), v = new THREE.Vector3(), out = new THREE.Vector3();
+  for (let t = 0; t < pos.count; t += 3) {
+    a.fromBufferAttribute(pos, t); b.fromBufferAttribute(pos, t + 1); c.fromBufferAttribute(pos, t + 2);
+    fn.subVectors(c, b).cross(a.clone().sub(b)).normalize();
+    const onBevel = bevels.some((p) => p.n.dot(fn) > 0.9999) && !faces.some((p) => p.n.dot(fn) > 0.9999);
+    if (!onBevel) continue;
+    for (let i = 0; i < 3; i++) {
+      v.fromBufferAttribute(pos, t + i);
+      out.set(0, 0, 0);
+      for (const p of faces) if (Math.abs(p.n.dot(v) - p.d) < 1e-4) out.add(p.n);
+      if (out.lengthSq() < 1e-8) {
+        const touched = new Set();
+        for (const p of bevels) if (Math.abs(p.n.dot(v) - p.d) < 1e-4) p.bridges.forEach((f) => touched.add(f));
+        for (const f of touched) out.add(faces[f].n);
+        if (out.lengthSq() < 1e-8) out.copy(fn);
+      }
+      out.normalize();
+      nrm.setXYZ(t + i, out.x, out.y, out.z);
+    }
+  }
+  nrm.needsUpdate = true;
+}
+
+const plane = (n, d) => ({ n: n.clone().normalize(), d });
+const planeThrough = (n, point) => { const u = n.clone().normalize(); return { n: u, d: u.dot(point) }; };
+
+const labelAngle = (i) => THREE.MathUtils.degToRad(30 * i - 45);
+
+function sideLabels(spec, labels, k, W, L) {
+  const pxW = 1024;
+  const pxH = Math.round((pxW * L) / W);
+  const canvas = document.createElement('canvas');
+  canvas.width = pxW;
+  canvas.height = pxH;
+  const ctx = canvas.getContext('2d');
+  const dotLevel = 0.2, textLevel = 0.5;
+  const rDot = spec.r0 + (spec.r1 - spec.r0) * dotLevel;
+  ctx.fillStyle = GLYPH;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `500 ${Math.round(pxH * 0.34)}px Jost, Futura, "Avenir Next", sans-serif`;
+  const phiK = (k * 2 * Math.PI) / 3;
+  for (let j = 0; j < 4; j++) {
+    const i = k * 4 + j;
+    const x = rDot * Math.tan(labelAngle(i) - phiK);
+    const px = (0.5 + x / W) * pxW;
+    ctx.fillText(labels[i], px, pxH * (1 - textLevel));
+    ctx.beginPath();
+    ctx.arc(px, pxH * (1 - dotLevel), pxH * 0.035, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  return tex;
+}
+
+function buildRing(spec, labels, chamfer) {
+  const z = new THREE.Vector3(0, 0, 1);
+  const planes = [plane(z.clone().negate(), -spec.s0)];
+  if (spec.r1 > 0) planes.push(plane(z, spec.s1));
+  const faces = [];
+  for (let k = 0; k < 3; k++) {
+    const phi = (k * 2 * Math.PI) / 3;
+    const n = radial(phi);
+    const bottom = n.clone().multiplyScalar(spec.r0).setZ(spec.s0);
+    const top = n.clone().multiplyScalar(spec.r1).setZ(spec.s1);
+    const normal = n.clone().multiplyScalar(spec.s1 - spec.s0).addScaledVector(z, spec.r0 - spec.r1).normalize();
+    planes.push(planeThrough(normal, bottom));
+    faces.push({ k, phi, bottom, top, normal });
+  }
+
+  const ring = new THREE.Group();
+  const solid = new THREE.Mesh(chamferedSolid(planes, chamfer), bodyMat);
+  solid.castShadow = true;
+  solid.receiveShadow = true;
+  ring.add(solid);
+
+  if (labels) {
+    const W = 2 * spec.r0 * SQ3;
+    for (const f of faces) {
+      const up = f.top.clone().sub(f.bottom);
+      const L = up.length();
+      up.normalize();
+      const t = tangent(f.phi);
+      const decal = new THREE.Mesh(
+        new THREE.PlaneGeometry(W, L),
+        new THREE.MeshStandardMaterial({
+          map: sideLabels(spec, labels, f.k, W, L), transparent: true, depthWrite: false,
+          roughness: 0.6, emissive: 0xffffff, emissiveIntensity: 0.28,
+          polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+        })
+      );
+      decal.material.emissiveMap = decal.material.map;
+      const centre = f.bottom.clone().addScaledVector(up, L / 2).addScaledVector(f.normal, 0.0015);
+      decal.matrixAutoUpdate = false;
+      decal.matrix.makeBasis(t, up, f.normal).setPosition(centre);
+      decal.raycast = () => {};
+      ring.add(decal);
+    }
+  }
+  return ring;
+}
+
+const HOURS = ['12', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'];
+const MINUTES = ['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'];
+
+const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -9.82, 0) });
+world.allowSleep = true;
+world.defaultContactMaterial.friction = 0.45;
+world.defaultContactMaterial.restitution = 0.12;
+
+function staticPlane(position, euler) {
+  const b = new CANNON.Body({ type: CANNON.Body.STATIC, shape: new CANNON.Plane() });
+  b.position.set(...position);
+  b.quaternion.setFromEuler(...euler);
+  world.addBody(b);
+}
+staticPlane([0, -1, 0], [-Math.PI / 2, 0, 0]);
+const FENCE = 7;
+staticPlane([-FENCE, 0, 0], [0, Math.PI / 2, 0]);
+staticPlane([FENCE, 0, 0], [0, -Math.PI / 2, 0]);
+staticPlane([0, 0, -FENCE], [0, 0, 0]);
+staticPlane([0, 0, FENCE], [0, Math.PI, 0]);
+
+function hullShape(points) {
+  const centre = points.reduce((c, p) => c.add(p), new THREE.Vector3()).divideScalar(points.length);
+  const hull = new ConvexHull().setFromPoints(points.map((p) => p.clone().sub(centre)));
+  const vertices = [], faces = [], index = new Map();
+  const id = (p) => {
+    const k = `${p.x.toFixed(5)},${p.y.toFixed(5)},${p.z.toFixed(5)}`;
+    if (!index.has(k)) { index.set(k, vertices.length); vertices.push(new CANNON.Vec3(p.x, p.y, p.z)); }
+    return index.get(k);
+  };
+  for (const f of hull.faces) {
+    const face = [];
+    let e = f.edge;
+    do { face.push(id(e.head().point)); e = e.next; } while (e !== f.edge);
+    faces.push(face);
+  }
+  return { shape: new CANNON.ConvexPolyhedron({ vertices, faces }), offset: new CANNON.Vec3(centre.x, centre.y, centre.z) };
+}
+
+const scaled = (spec, k) => ({ s0: spec.s0 * k, r0: spec.r0 * k, s1: spec.s1 * k, r1: spec.r1 * k });
+
+const clockRoot = new THREE.Group();
+scene.add(clockRoot);
+const clocks = [];
+
+function makeClock({ planes, hint, chamfer, mass }) {
+  const corners = cornersOf(planes);
+  const aim = hint.clone().normalize();
+  let apex = null, best = -Infinity;
+  for (const c of corners) {
+    if (c.on.length !== 3) continue;
+    const s = c.p.clone().normalize().dot(aim);
+    if (s > best) { best = s; apex = c; }
+  }
+  const vertex = apex.p.clone();
+  const axis = vertex.clone().normalize();
+  const reach = vertex.dot(axis);
+  const nearest = Math.max(...corners.filter((c) => c !== apex).map((c) => c.p.dot(axis)));
+  const depth = Math.max(P.cutFraction * reach, nearest + 0.15 * (reach - nearest));
+  const origin = axis.clone().multiplyScalar(depth);
+
+  const [pa, pb, pc] = apex.on.map((i) => planes[i]);
+  const tri = [[pa, pb], [pb, pc], [pa, pc]].map(([p, q]) => {
+    const e = p.n.clone().cross(q.n).normalize();
+    if (e.dot(axis) > 0) e.negate();
+    return vertex.clone().addScaledVector(e, (depth - reach) / e.dot(axis));
+  });
+  const [A, B, C] = tri;
+  const area = B.clone().sub(A).cross(C.clone().sub(A)).length() / 2;
+  const inradius = (2 * area) / (A.distanceTo(B) + B.distanceTo(C) + C.distanceTo(A));
+  const scale = inradius / REFERENCE_INRADIUS;
+
+  const tip = tri.reduce((lo, p) => (p.y < lo.y ? p : lo));
+  const e2 = tip.clone().sub(origin);
+  e2.addScaledVector(axis, -e2.dot(axis)).normalize().negate();
+  const e1 = e2.clone().cross(axis).normalize();
+  const frame = new THREE.Matrix4().makeBasis(e1, e2, axis).setPosition(origin);
+
+  const solidPlanes = planes.concat([planeThrough(axis, origin)]);
+  const rig = new THREE.Group();
+  const bodyMesh = new THREE.Mesh(chamferedSolid(solidPlanes, chamfer), bodyMat);
+  bodyMesh.castShadow = true;
+  bodyMesh.receiveShadow = true;
+  bodyMesh.userData.part = 'body';
+  rig.add(bodyMesh);
+
+  const pointer = new THREE.Group();
+  const inset = origin.clone().sub(tip).normalize();
+  const lift = axis.clone().multiplyScalar(0.004);
+  const a = tip.clone().addScaledVector(inset, 0.09 * scale).add(lift);
+  const b = tip.clone().lerp(origin, 0.75).add(lift);
+  const line = new THREE.Mesh(new THREE.CylinderGeometry(0.008 * Math.max(scale, 0.7), 0.008 * Math.max(scale, 0.7), a.distanceTo(b), 8), glyphMat);
+  line.position.copy(a).lerp(b, 0.5);
+  line.quaternion.setFromUnitVectors(UP, b.clone().sub(a).normalize());
+  const dot = new THREE.Mesh(new THREE.SphereGeometry(0.022 * Math.max(scale, 0.7), 16, 12), glyphMat);
+  dot.position.copy(a);
+  pointer.add(line, dot);
+  pointer.userData.part = 'body';
+  rig.add(pointer);
+
+  const axisGroup = new THREE.Group();
+  axisGroup.matrixAutoUpdate = false;
+  axisGroup.matrix.copy(frame);
+  rig.add(axisGroup);
+  const ringChamfer = P.ringChamfer * Math.max(scale, 0.6);
+  const rings = {
+    hour: buildRing(scaled(P.hour, scale), HOURS, ringChamfer),
+    minute: buildRing(scaled(P.minute, scale), MINUTES, ringChamfer),
+    cap: buildRing(scaled(P.cap, scale), null, ringChamfer),
+  };
+  for (const [name, ring] of Object.entries(rings)) {
+    ring.userData.part = name;
+    axisGroup.add(ring);
+  }
+
+  const body = new CANNON.Body({ mass, linearDamping: 0.12, angularDamping: 0.22 });
+  const solidHull = hullShape(cornersOf(solidPlanes).map((c) => c.p));
+  body.addShape(solidHull.shape, solidHull.offset);
+  const ringPoints = [new THREE.Vector3(0, 0, P.cap.s1 * scale)];
+  for (const spec of [P.hour, P.minute]) {
+    for (let i = 0; i < 18; i++) {
+      const t = (i / 18) * TWO_PI, R = 2 * spec.r0 * scale * 0.85;
+      ringPoints.push(new THREE.Vector3(Math.cos(t) * R, Math.sin(t) * R, spec.s0 * scale));
+    }
+  }
+  const ringHull = hullShape(ringPoints.map((p) => p.applyMatrix4(frame)));
+  body.addShape(ringHull.shape, ringHull.offset);
+  body.sleepSpeedLimit = 0.05;
+  world.addBody(body);
+
+  const clock = { rig, axisGroup, rings, body, scale };
+  rig.userData.clock = clock;
+  clockRoot.add(rig);
+  clocks.push(clock);
+  return clock;
+}
+
+function disposeClock(clock) {
+  if (pull.body === clock.body) release();
+  world.removeBody(clock.body);
+  clockRoot.remove(clock.rig);
+  clock.rig.traverse((o) => {
+    if (o.geometry) o.geometry.dispose();
+    if (o.material && o.material !== bodyMat && o.material !== glyphMat) {
+      if (o.material.map) o.material.map.dispose();
+      o.material.dispose();
+    }
+  });
+  clocks.splice(clocks.indexOf(clock), 1);
+}
+
+function cubePlanes(half, turn) {
+  return [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]
+    .map((a) => plane(new THREE.Vector3(...a).applyAxisAngle(UP, turn), half));
+}
+function prismPlanes(sides, apothem, height) {
+  const planes = [plane(UP, height / 2), plane(UP.clone().negate(), height / 2)];
+  for (let i = 0; i < sides; i++) {
+    const a = (i / sides) * TWO_PI;
+    planes.push(plane(new THREE.Vector3(Math.cos(a), 0, Math.sin(a)), apothem));
+  }
+  return planes;
+}
+const SHAPES = {
+  pyramid: () => [[1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1]].map((n) => plane(new THREE.Vector3(...n), 0.48)),
+  square: () => cubePlanes(0.72, 0),
+  pentagon: () => prismPlanes(5, 0.78, 1.0),
+  hexagon: () => prismPlanes(6, 0.8, 0.95),
+};
+const MAX_EXTRA = 12;
+
+let mainClock = null;
+
+function standUp() {
+  const b = mainClock.body;
+  b.position.set(0, 0.15, 0);
+  b.quaternion.set(0, 0, 0, 1);
+  b.velocity.setZero();
+  b.angularVelocity.setZero();
+  b.wakeUp();
+}
+
+function spawnClock(kind) {
+  const extras = clocks.filter((c) => c !== mainClock);
+  if (extras.length >= MAX_EXTRA) disposeClock(extras[0]);
+  const clock = makeClock({ planes: SHAPES[kind](), hint: new THREE.Vector3(0.3, 1, 0.45), chamfer: 0.045, mass: 1.6 });
+  const a = Math.random() * TWO_PI, d = 2.6 + Math.random() * 1.6;
+  const lim = FENCE - 1.2;
+  const from = mainClock.body.position;
+  clock.body.position.set(
+    THREE.MathUtils.clamp(from.x + Math.cos(a) * d, -lim, lim),
+    3 + Math.random() * 1.5,
+    THREE.MathUtils.clamp(from.z + Math.sin(a) * d, -lim, lim)
+  );
+  clock.body.quaternion.setFromEuler((Math.random() - 0.5) * 1.2, Math.random() * TWO_PI, (Math.random() - 0.5) * 1.2);
+  clock.rig.position.copy(clock.body.position);
+  clock.rig.quaternion.copy(clock.body.quaternion);
+}
+
+const PULL = {
+  maxStretch: 3.0,
+  maxForce: 150,
+  breakAt: 1.5,
+  damping: 3.5,
+  radius: 0.055,
+  maxPinch: 0.88,
+};
+const pull = { active: false, body: null, local: new CANNON.Vec3(), target: new THREE.Vector3(), plane: new THREE.Plane(), tension: 0 };
+
+const beamMat = new THREE.ShaderMaterial({
+  uniforms: {
+    uLen: { value: 1 }, uRadius: { value: PULL.radius }, uPinch: { value: 0 },
+    uCalm: { value: new THREE.Color('#6b6e74') }, uTaut: { value: new THREE.Color('#3a3c41') },
+  },
+  vertexShader: `
+    uniform float uLen, uRadius, uPinch;
+    varying vec3 vN; varying vec3 vV;
+    const float PI = 3.14159265;
+    void main() {
+      float t = position.y + 0.5;
+      float s = sin(PI * t);
+      float r = uRadius * (1.0 - uPinch * s * s);
+      vec3 p = vec3(position.x * r, t * uLen, position.z * r);
+      float slope = -uRadius * uPinch * 2.0 * s * cos(PI * t) * PI / max(uLen, 1e-3);
+      vN = normalize(normalMatrix * normalize(vec3(position.x, -slope, position.z)));
+      vec4 mv = modelViewMatrix * vec4(p, 1.0);
+      vV = normalize(-mv.xyz);
+      gl_Position = projectionMatrix * mv;
+    }`,
+  fragmentShader: `
+    uniform vec3 uCalm, uTaut; uniform float uPinch;
+    varying vec3 vN; varying vec3 vV;
+    void main() {
+      float rim = 1.0 - abs(dot(normalize(vN), normalize(vV)));
+      float a = 0.24 + 0.6 * pow(rim, 2.0);
+      vec3 c = mix(uCalm, uTaut, smoothstep(0.45, 1.0, uPinch / 0.88));
+      gl_FragColor = vec4(c, a);
+    }`,
+  transparent: true, depthWrite: false, side: THREE.DoubleSide,
+});
+const beam = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 28, 48, true), beamMat);
+beam.frustumCulled = false;
+beam.renderOrder = 2;
+const ball = new THREE.Mesh(
+  new THREE.SphereGeometry(0.075, 24, 16),
+  new THREE.MeshStandardMaterial({ color: GLYPH, roughness: 0.3, emissive: GLYPH, emissiveIntensity: 0.25 })
+);
+beam.visible = ball.visible = false;
+scene.add(beam, ball);
+
+const anchorWorld = new CANNON.Vec3();
+world.addEventListener('preStep', () => {
+  if (!pull.active) return;
+  const body = pull.body;
+  body.pointToWorldFrame(pull.local, anchorWorld);
+  const dx = pull.target.x - anchorWorld.x, dy = pull.target.y - anchorWorld.y, dz = pull.target.z - anchorWorld.z;
+  const len = Math.hypot(dx, dy, dz);
+  if (len > PULL.maxStretch * PULL.breakAt) { release(); return; }
+  pull.tension = Math.min(len / PULL.maxStretch, 1);
+  const k = len > 1e-6 ? (PULL.maxForce * pull.tension) / len : 0;
+  const r = anchorWorld.vsub(body.position);
+  const v = body.velocity.vadd(body.angularVelocity.cross(r));
+  const f = new CANNON.Vec3(dx * k - v.x * PULL.damping, dy * k - v.y * PULL.damping, dz * k - v.z * PULL.damping);
+  body.applyForce(f, r);
+  body.wakeUp();
+});
+
+const _a = new THREE.Vector3(), _d = new THREE.Vector3();
+function updateBeam() {
+  if (!pull.active) return;
+  pull.body.pointToWorldFrame(pull.local, anchorWorld);
+  _a.set(anchorWorld.x, anchorWorld.y, anchorWorld.z);
+  _d.subVectors(pull.target, _a);
+  const len = _d.length();
+  beam.position.copy(_a);
+  if (len > 1e-4) beam.quaternion.setFromUnitVectors(UP, _d.normalize());
+  beamMat.uniforms.uLen.value = len;
+  beamMat.uniforms.uPinch.value = PULL.maxPinch * Math.min(len / PULL.maxStretch, 1);
+  ball.position.copy(pull.target);
+}
+
+function release() {
+  pull.active = false;
+  pull.body = null;
+  beam.visible = ball.visible = false;
+  pull.tension = 0;
+}
+
+const ringAngle = (v) => -THREE.MathUtils.degToRad(30 * v - 45);
+const LABEL_STEP = Math.PI / 6;
+const HALF_DAY = 43200;
+const mod = (a, n) => ((a % n) + n) % n;
+const mono = () => performance.now() / 1000;
+
+const T = {
+  mode: 'clock',
+  offset: 0,
+  fast: false,
+  sw: { running: false, base: 0, startedAt: 0 },
+  tm: { running: false, remaining: 300, set: 300, endsAt: 0, done: false },
+};
+
+function wallSeconds() {
+  const d = new Date();
+  return d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds() + d.getMilliseconds() / 1000;
+}
+const clockSeconds = () => mod(wallSeconds() + T.offset, 86400);
+const stopwatchElapsed = () => T.sw.base + (T.sw.running ? mono() - T.sw.startedAt : 0);
+const timerRemaining = () => (T.tm.running ? Math.max(0, T.tm.endsAt - mono()) : T.tm.remaining);
+
+function nudge(dsec) {
+  if (T.mode === 'clock') {
+    T.offset += dsec;
+  } else if (T.mode === 'stopwatch') {
+    T.sw.base = Math.max(-(stopwatchElapsed() - T.sw.base), T.sw.base + dsec);
+  } else {
+    const rem = THREE.MathUtils.clamp(timerRemaining() + dsec, 0, HALF_DAY - 1);
+    if (T.tm.running) T.tm.endsAt = mono() + rem; else T.tm.remaining = T.tm.set = rem;
+    T.tm.done = false;
+  }
+}
+
+const pad = (n) => String(n).padStart(2, '0');
+function hms(sec, { tenths = false, twelve = false } = {}) {
+  const whole = Math.floor(sec);
+  let h = Math.floor(whole / 3600);
+  if (twelve) h = h % 12 === 0 ? 12 : h % 12;
+  const base = `${h}:${pad(Math.floor(whole / 60) % 60)}:${pad(whole % 60)}`;
+  return tenths ? `${base}.${Math.floor((sec - whole) * 10)}` : base;
+}
+
+const readout = document.getElementById('readout');
+const readoutLabel = document.getElementById('readout-label');
+let lastText = '', lastLabel = '';
+function updateReadout() {
+  let text, label;
+  if (T.mode === 'clock') {
+    const s = clockSeconds();
+    text = hms(s, { twelve: true });
+    label = `Clock \u00b7 ${s < HALF_DAY ? 'AM' : 'PM'}`;
+  } else if (T.mode === 'stopwatch') {
+    text = hms(stopwatchElapsed(), { tenths: true });
+    label = T.sw.running ? 'Stopwatch \u00b7 running' : 'Stopwatch';
+  } else {
+    text = hms(Math.ceil(timerRemaining()));
+    label = T.tm.done ? 'Timer \u00b7 done' : T.tm.running ? 'Timer \u00b7 counting down' : 'Timer';
+  }
+  if (text !== lastText) { readout.textContent = text; lastText = text; }
+  if (label !== lastLabel) { readoutLabel.textContent = label; lastLabel = label; }
+  readout.classList.toggle('alarm', T.mode === 'timer' && T.tm.done);
+}
+
+const ALIGNED = Math.PI / 3;
+function ringTargets() {
+  if (T.mode === 'timer') {
+    const set = Math.max(T.tm.set, 1e-6);
+    const p = THREE.MathUtils.clamp(timerRemaining() / set, 0, 1);
+    const unwind = (secondsPerTurn) => ALIGNED + (Math.PI / 3 + TWO_PI * Math.floor(set / secondsPerTurn)) * p;
+    return { hour: unwind(3 * 3600), minute: unwind(180), cap: unwind(30) };
+  }
+  const sec = T.mode === 'clock' ? mod(clockSeconds(), HALF_DAY) : mod(stopwatchElapsed(), HALF_DAY);
+  return {
+    hour: ringAngle(sec / 3600),
+    minute: ringAngle((sec % 3600) / 300),
+    cap: -((sec % 60) / 60) * TWO_PI,
+  };
+}
+
+const dragTwist = { hour: 0, minute: 0, cap: 0 };
+function applyRings(dt) {
+  const goal = ringTargets();
+  const ease = 1 - Math.exp(-dt * 9);
+  for (const clock of clocks) {
+    for (const name of ['hour', 'minute', 'cap']) {
+      const ring = clock.rings[name];
+      const cur = ring.rotation.z;
+      const want = goal[name] + dragTwist[name];
+      const target = cur + Math.atan2(Math.sin(want - cur), Math.cos(want - cur));
+      const held = drag && drag.kind === 'ring';
+      ring.rotation.z = held ? target : cur + (target - cur) * ease;
+    }
+  }
+}
+
+let audio = null;
+function ensureAudio() {
+  try { audio = audio || new (window.AudioContext || window.webkitAudioContext)(); audio.resume(); } catch (e) { audio = null; }
+}
+function chime() {
+  if (!audio) return;
+  const t0 = audio.currentTime;
+  for (let i = 0; i < 3; i++) {
+    const o = audio.createOscillator(), g = audio.createGain();
+    o.type = 'sine';
+    o.frequency.value = 880;
+    g.gain.setValueAtTime(0.0001, t0 + i * 0.32);
+    g.gain.exponentialRampToValueAtTime(0.25, t0 + i * 0.32 + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + i * 0.32 + 0.26);
+    o.connect(g).connect(audio.destination);
+    o.start(t0 + i * 0.32);
+    o.stop(t0 + i * 0.32 + 0.3);
+  }
+}
+
+const $ = (id) => document.getElementById(id);
+const HINTS = {
+  clock: 'Drag a ring to set the time. Drag a body to pull it around. Drop more clocks from the left.',
+  stopwatch: 'The rings count up: hours, minutes, and the cap sweeps the seconds.',
+  timer: 'Pick a length or drag the rings to set it. The rings unwind until each body is whole again.',
+};
+function setMode(mode) {
+  T.mode = mode;
+  for (const m of ['clock', 'stopwatch', 'timer']) {
+    $('tab-' + m).setAttribute('aria-pressed', String(m === mode));
+    $('panel-' + m).hidden = m !== mode;
+  }
+  $('hint').textContent = HINTS[mode];
+}
+for (const m of ['clock', 'stopwatch', 'timer']) $('tab-' + m).addEventListener('click', () => setMode(m));
+
+$('clock-fast').addEventListener('click', () => {
+  T.fast = !T.fast;
+  $('clock-fast').setAttribute('aria-pressed', String(T.fast));
+});
+$('clock-now').addEventListener('click', () => {
+  T.offset = 0;
+  T.fast = false;
+  $('clock-fast').setAttribute('aria-pressed', 'false');
+});
+
+function syncButtons() {
+  $('sw-start').textContent = T.sw.running ? 'Pause' : stopwatchElapsed() > 0 ? 'Resume' : 'Start';
+  $('tm-start').textContent = T.tm.running ? 'Pause' : 'Start';
+  $('clock-now').hidden = !(T.fast || Math.abs(T.offset) >= 0.5);
+}
+$('sw-start').addEventListener('click', () => {
+  if (T.sw.running) { T.sw.base = stopwatchElapsed(); T.sw.running = false; }
+  else { T.sw.startedAt = mono(); T.sw.running = true; }
+});
+$('sw-reset').addEventListener('click', () => { T.sw.running = false; T.sw.base = 0; });
+
+for (const b of document.querySelectorAll('[data-minutes]')) {
+  b.addEventListener('click', () => {
+    T.tm.running = false;
+    T.tm.done = false;
+    T.tm.remaining = T.tm.set = Number(b.dataset.minutes) * 60;
+  });
+}
+$('tm-start').addEventListener('click', () => {
+  ensureAudio();
+  if (T.tm.running) { T.tm.remaining = timerRemaining(); T.tm.running = false; return; }
+  if (T.tm.remaining <= 0) T.tm.remaining = T.tm.set;
+  if (T.tm.remaining <= 0) return;
+  T.tm.endsAt = mono() + T.tm.remaining;
+  T.tm.running = true;
+  T.tm.done = false;
+});
+$('tm-reset').addEventListener('click', () => {
+  T.tm.running = false;
+  T.tm.done = false;
+  T.tm.remaining = T.tm.set;
+});
+
+$('upright').addEventListener('click', () => standUp());
+for (const b of document.querySelectorAll('[data-shape]')) b.addEventListener('click', () => spawnClock(b.dataset.shape));
+$('clear-shapes').addEventListener('click', () => {
+  for (const c of clocks.filter((c) => c !== mainClock)) disposeClock(c);
+});
+const spinBtn = $('spin');
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+let wantSpin = !reduceMotion;
+controls.autoRotate = wantSpin;
+spinBtn.setAttribute('aria-pressed', String(wantSpin));
+spinBtn.addEventListener('click', () => {
+  wantSpin = !wantSpin;
+  controls.autoRotate = wantSpin;
+  spinBtn.setAttribute('aria-pressed', String(wantSpin));
+});
+
+const raycaster = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
+function aimAt(e) {
+  const r = renderer.domElement.getBoundingClientRect();
+  ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+}
+function pick() {
+  for (const h of raycaster.intersectObject(clockRoot, true)) {
+    let part = null, clock = null;
+    for (let o = h.object; o; o = o.parent) {
+      if (!part && o.userData.part) part = o.userData.part;
+      if (o.userData.clock) { clock = o.userData.clock; break; }
+    }
+    if (part && clock) return { part, clock, point: h.point };
+  }
+  return null;
+}
+
+const _inv = new THREE.Matrix4(), _o = new THREE.Vector3(), _dir = new THREE.Vector3();
+function axisAngleAt(clock, s) {
+  _inv.copy(clock.axisGroup.matrixWorld).invert();
+  _o.copy(raycaster.ray.origin).applyMatrix4(_inv);
+  _dir.copy(raycaster.ray.direction).transformDirection(_inv);
+  if (Math.abs(_dir.z) < 1e-3) return null;
+  const t = (s - _o.z) / _dir.z;
+  if (t < 0) return null;
+  _o.addScaledVector(_dir, t);
+  if (Math.hypot(_o.x, _o.y) < 0.05 * clock.scale) return null;
+  return Math.atan2(_o.x, -_o.y);
+}
+const SECONDS_PER_RADIAN = {
+  hour: -3600 / LABEL_STEP,
+  minute: -300 / LABEL_STEP,
+  cap: -60 / TWO_PI,
+};
+
+let drag = null;
+stage.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0 || !mainClock) return;
+  aimAt(e);
+  const hit = pick();
+  if (!hit) return;
+  e.stopPropagation();
+  e.preventDefault();
+  try { stage.setPointerCapture(e.pointerId); } catch (err) {}
+  controls.autoRotate = false;
+  if (hit.part === 'body') {
+    pull.body = hit.clock.body;
+    pull.body.pointToLocalFrame(new CANNON.Vec3(hit.point.x, hit.point.y, hit.point.z), pull.local);
+    pull.plane.setFromNormalAndCoplanarPoint(camera.getWorldDirection(new THREE.Vector3()), hit.point);
+    pull.target.copy(hit.point);
+    pull.active = true;
+    beam.visible = ball.visible = true;
+    drag = { kind: 'pull', id: e.pointerId };
+  } else {
+    const local = hit.clock.axisGroup.worldToLocal(hit.point.clone());
+    drag = { kind: 'ring', clock: hit.clock, part: hit.part, s: local.z, phi: Math.atan2(local.x, -local.y), id: e.pointerId };
+  }
+  stage.style.cursor = 'grabbing';
+}, { capture: true });
+
+stage.addEventListener('pointermove', (e) => {
+  aimAt(e);
+  if (!drag) {
+    stage.style.cursor = mainClock && pick() ? 'grab' : '';
+    return;
+  }
+  if (drag.kind === 'pull') {
+    if (!pull.active) return;
+    const p = raycaster.ray.intersectPlane(pull.plane, new THREE.Vector3());
+    if (p) { p.y = Math.max(p.y, -0.92); pull.target.copy(p); }
+  } else {
+    if (!clocks.includes(drag.clock)) return;
+    const phi = axisAngleAt(drag.clock, drag.s);
+    if (phi === null) return;
+    const dphi = Math.atan2(Math.sin(phi - drag.phi), Math.cos(phi - drag.phi));
+    drag.phi = phi;
+    if (T.mode === 'timer') dragTwist[drag.part] += dphi;
+    nudge(dphi * SECONDS_PER_RADIAN[drag.part]);
+  }
+});
+
+function endDrag(e) {
+  if (!drag || e.pointerId !== drag.id) return;
+  if (drag.kind === 'pull') release();
+  if (drag.kind === 'ring') dragTwist[drag.part] = 0;
+  drag = null;
+  stage.style.cursor = '';
+  controls.autoRotate = wantSpin;
+}
+stage.addEventListener('pointerup', endDrag);
+stage.addEventListener('pointercancel', endDrag);
+
+async function build() {
+  try { await document.fonts.load('500 64px Jost'); } catch (e) {}
+  const corner = new THREE.Vector3(1, 1, 1).applyAxisAngle(UP, CUBE_TURN);
+  mainClock = makeClock({ planes: cubePlanes(1, CUBE_TURN), hint: corner, chamfer: P.bodyChamfer, mass: 4 });
+  document.getElementById('status').hidden = true;
+}
+
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.fov = w / h < 0.8 ? 44 : 32;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize);
+resize();
+
+const _focus = new THREE.Vector3();
+let lastFrame = performance.now();
+
+build().then(() => {
+  renderer.setAnimationLoop(() => {
+    const now = performance.now();
+    const dt = Math.min((now - lastFrame) / 1000, 0.1);
+    lastFrame = now;
+
+    if (T.fast) T.offset += dt * 599;
+    if (T.tm.running && timerRemaining() <= 0) {
+      T.tm.running = false;
+      T.tm.remaining = 0;
+      T.tm.done = true;
+      chime();
+    }
+
+    world.step(1 / 60, dt, 5);
+    for (const c of clocks) {
+      c.rig.position.copy(c.body.position);
+      c.rig.quaternion.copy(c.body.quaternion);
+    }
+    clockRoot.updateMatrixWorld(true);
+
+    applyRings(dt);
+    updateReadout();
+    syncButtons();
+    updateBeam();
+
+    const m = mainClock.rig.position;
+    _focus.set(m.x, m.y + 0.25, m.z);
+    controls.target.lerp(_focus, 0.05);
+    controls.update();
+    renderer.render(scene, camera);
+  });
+}).catch((err) => {
+  document.getElementById('status').textContent = 'The 3D view could not start: ' + err.message;
+  console.error(err);
+});
+</script>
+</body>
+</html>
