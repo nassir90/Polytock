@@ -225,6 +225,8 @@
   .modes button:focus-visible, .chip:focus-visible { outline: 2px solid var(--glyph); outline-offset: 2px; }
   .panel { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; flex: 1 1 auto; min-width: 0; }
   .tools { display: flex; gap: 6px; margin-left: auto; }
+  .zoom { display: flex; gap: 2px; }
+  .zoom .chip { min-width: 2.2em; font-size: 16px; line-height: 1; }
   .shelf {
     position: absolute;
     left: 20px;
@@ -429,6 +431,10 @@
   </div>
 
   <div class="tools">
+    <div class="zoom" role="group" aria-label="Zoom">
+      <button class="chip" id="zoom-out" aria-label="Zoom out" title="Zoom out (−)">−</button>
+      <button class="chip" id="zoom-in" aria-label="Zoom in" title="Zoom in (+)">+</button>
+    </div>
     <button class="chip" id="outdoors" aria-pressed="false">Outdoors</button>
     <button class="chip" id="upright">Stand up</button>
     <button class="chip" id="spin" aria-pressed="true">Orbit</button>
@@ -518,6 +524,7 @@ controls.enableDamping = true;
 controls.enablePan = false;
 controls.minDistance = 4;
 controls.maxDistance = 16;
+controls.enableZoom = false;
 controls.maxPolarAngle = Math.PI * 0.53;
 controls.autoRotateSpeed = 0.6;
 
@@ -1348,6 +1355,27 @@ $('tm-reset').addEventListener('click', () => {
 });
 
 $('upright').addEventListener('click', () => standUp(selection.size ? [...selection] : [mainClock]));
+let zoomGoal = null;
+const _zoomOffset = new THREE.Vector3();
+function zoomBy(factor) {
+  const from = zoomGoal ?? camera.position.distanceTo(controls.target);
+  zoomGoal = THREE.MathUtils.clamp(from * factor, controls.minDistance, controls.maxDistance);
+}
+function stepZoom() {
+  if (zoomGoal === null) return;
+  _zoomOffset.copy(camera.position).sub(controls.target);
+  const d = _zoomOffset.length();
+  const next = d + (zoomGoal - d) * 0.18;
+  camera.position.copy(controls.target).add(_zoomOffset.setLength(next));
+  if (Math.abs(zoomGoal - next) < 0.005) zoomGoal = null;
+}
+$('zoom-in').addEventListener('click', () => zoomBy(0.8));
+$('zoom-out').addEventListener('click', () => zoomBy(1.25));
+window.addEventListener('keydown', (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.target.closest?.('input, textarea, [contenteditable]')) return;
+  if (e.key === '+' || e.key === '=') zoomBy(0.8);
+  else if (e.key === '-' || e.key === '_') zoomBy(1.25);
+});
 for (const b of document.querySelectorAll('[data-shape]')) b.addEventListener('click', () => spawnClock(b.dataset.shape));
 $('clear-shapes').addEventListener('click', () => {
   for (const c of clocks.filter((c) => c !== mainClock)) disposeClock(c);
@@ -2027,6 +2055,7 @@ build().then(() => {
     const m = mainClock.rig.position;
     _focus.set(m.x, m.y + (outdoors ? 0.6 : 0.25), m.z);
     controls.target.lerp(_focus, 0.05);
+    stepZoom();
     controls.update();
     if (outdoors) {
       updateOutdoor(now / 1000);
