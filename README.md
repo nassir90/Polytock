@@ -131,7 +131,8 @@ A clock is built from any such solid in the same way:
 
 1. Pick a corner where exactly three faces meet.
 2. Slice it off with a plane square to the line from the centre through that corner. The cut sits 48% of the way out, or just past the neighbouring corners if those would otherwise be caught, so the cut is always a triangle.
-3. Run the ring axis along that line. Size the rings to the cut triangle's incircle, place the pointer on the cut's lowest corner, and print the numerals so that a steady turn sweeps them past the pointer evenly (each label sits at `r·tan(α − φ)` along its flat side).
+3. Run the ring axis along that line, through the corner that was cut off. The three rings are slices of that corner: each is bounded by the same three faces, between two heights along the axis, so when they line up they rebuild the original solid exactly.
+4. Place the pointer on the cut's lowest corner, and print the numerals so that a steady turn sweeps them past the pointer evenly (each label sits at `r·tan(α − φ)` along its flat side, where `r` is that side's distance from the axis).
 
 ### Rounded edges without extra geometry
 

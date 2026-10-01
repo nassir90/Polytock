@@ -466,9 +466,9 @@ const token = (n) => css.getPropertyValue(n).trim();
 const P = {
   cutFraction: 0.48,
   bevelWidth: 0.035,
-  hour:   { s0: 0.02, r0: 0.80, s1: 0.42, r1: 0.46 },
-  minute: { s0: 0.43, r0: 0.58, s1: 0.82, r1: 0.25 },
-  cap:    { s0: 0.83, r0: 0.33, s1: 1.26, r1: 0.0 },
+  ringSplits: [0.38, 0.72],
+  ringFloor: 0.008,
+  ringGap: 0.004,
 };
 
 const SQ3 = Math.sqrt(3);
@@ -476,6 +476,8 @@ const TWO_PI = Math.PI * 2;
 const UP = new THREE.Vector3(0, 1, 0);
 const REFERENCE_INRADIUS = 1.56 / Math.sqrt(6);
 const CUBE_TURN = -Math.PI / 4;
+const ALIGNED = Math.PI / 3;
+const wrapAngle = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 
 const radial = (phi) => new THREE.Vector3(Math.sin(phi), -Math.cos(phi), 0);
 const tangent = (phi) => new THREE.Vector3(Math.cos(phi), Math.sin(phi), 0);
@@ -630,49 +632,76 @@ const planeThrough = (n, point) => { const u = n.clone().normalize(); return { n
 
 const labelAngle = (i) => THREE.MathUtils.degToRad(30 * i - 45);
 
-function sideLabels(spec, labels, k, W, L) {
+function sideLabels(spec, face, labels, W, L) {
   const pxW = 1024;
   const pxH = Math.round((pxW * L) / W);
   const canvas = document.createElement('canvas');
   canvas.width = pxW;
   canvas.height = pxH;
   const ctx = canvas.getContext('2d');
+  const toPx = (x, y) => [((x - face.xa) / W) * pxW, pxH * (1 - y / L)];
+  const shrink = face.r1 / face.r0;
+  ctx.beginPath();
+  for (const [x, y] of [[face.xa, 0], [face.xb, 0], [face.xb * shrink, L], [face.xa * shrink, L]]) ctx.lineTo(...toPx(x, y));
+  ctx.closePath();
+  ctx.clip();
   const dotLevel = 0.27, textLevel = 0.6;
-  const rDot = spec.r0 + (spec.r1 - spec.r0) * dotLevel;
+  const rDot = face.r0 + (face.r1 - face.r0) * dotLevel;
+  const reach = rDot / face.r0;
   ctx.fillStyle = GLYPH;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.font = `500 ${Math.round(pxH * 0.34)}px Jost, Futura, "Avenir Next", sans-serif`;
-  const phiK = (k * 2 * Math.PI) / 3;
-  for (let j = 0; j < 4; j++) {
-    const i = k * 4 + j;
-    const x = rDot * Math.tan(labelAngle(i) - phiK);
-    const px = (0.5 + x / W) * pxW;
-    ctx.fillText(labels[i], px, pxH * (1 - textLevel));
+  const fontPx = Math.min(pxH * 0.34, (0.32 * rDot * pxW) / W);
+  ctx.font = `500 ${Math.round(fontPx)}px Jost, Futura, "Avenir Next", sans-serif`;
+  labels.forEach((text, i) => {
+    const d = wrapAngle(labelAngle(i) - face.phi);
+    if (Math.abs(d) > 1.4) return;
+    const [px] = toPx(rDot * Math.tan(d), 0);
+    const half = ctx.measureText(text).width / 2;
+    const [lo] = toPx(face.xa * reach, 0), [hi] = toPx(face.xb * reach, 0);
+    if (px < lo - half || px > hi + half) return;
+    ctx.fillText(text, px, pxH * (1 - textLevel));
     ctx.beginPath();
-    ctx.arc(px, pxH * (1 - dotLevel), pxH * 0.035, 0, Math.PI * 2);
+    ctx.arc(px, pxH * (1 - dotLevel), fontPx * 0.1, 0, Math.PI * 2);
     ctx.fill();
-  }
+  });
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
   return tex;
 }
 
+const sideReach = (side, z) => (side.d - side.n.z * z) / Math.hypot(side.n.x, side.n.y);
+function ringCorners(sides, z) {
+  return sides.map((a, k) => {
+    const b = sides[(k + 1) % 3];
+    const ua = radial(a.phi), ub = radial(b.phi);
+    const ra = sideReach(a, z), rb = sideReach(b, z);
+    const det = ua.x * ub.y - ua.y * ub.x;
+    return new THREE.Vector3((ra * ub.y - rb * ua.y) / det, (ua.x * rb - ub.x * ra) / det, 0);
+  });
+}
 function buildRing(spec, labels, chamfer) {
   const z = new THREE.Vector3(0, 0, 1);
   const planes = [plane(z.clone().negate(), -spec.s0)];
-  if (spec.r1 > 0) planes.push(plane(z, spec.s1));
-  const faces = [];
-  for (let k = 0; k < 3; k++) {
-    const phi = (k * 2 * Math.PI) / 3;
-    const n = radial(phi);
-    const bottom = n.clone().multiplyScalar(spec.r0).setZ(spec.s0);
-    const top = n.clone().multiplyScalar(spec.r1).setZ(spec.s1);
-    const normal = n.clone().multiplyScalar(spec.s1 - spec.s0).addScaledVector(z, spec.r0 - spec.r1).normalize();
-    planes.push(planeThrough(normal, bottom));
-    faces.push({ k, phi, bottom, top, normal });
-  }
+  if (spec.s1 < spec.height - 1e-6) planes.push(plane(z, spec.s1));
+  const corners = ringCorners(spec.sides, spec.s0);
+  const faces = spec.sides.map((side, k) => {
+    planes.push({ n: side.n.clone(), d: side.d });
+    const t = tangent(side.phi);
+    const xs = [corners[k], corners[(k + 2) % 3]].map((c) => c.dot(t)).sort((a, b) => a - b);
+    const r0 = sideReach(side, spec.s0), r1 = sideReach(side, spec.s1);
+    return {
+      phi: side.phi,
+      normal: side.n.clone(),
+      r0,
+      r1,
+      bottom: radial(side.phi).multiplyScalar(r0).setZ(spec.s0),
+      top: radial(side.phi).multiplyScalar(r1).setZ(spec.s1),
+      xa: xs[0],
+      xb: xs[1],
+    };
+  });
 
   const ring = new THREE.Group();
   const solid = new THREE.Mesh(chamferedSolid(planes, chamfer), bodyMat);
@@ -681,8 +710,8 @@ function buildRing(spec, labels, chamfer) {
   ring.add(solid);
 
   if (labels) {
-    const W = 2 * spec.r0 * SQ3;
     for (const f of faces) {
+      const W = f.xb - f.xa;
       const up = f.top.clone().sub(f.bottom);
       const L = up.length();
       up.normalize();
@@ -690,13 +719,13 @@ function buildRing(spec, labels, chamfer) {
       const decal = new THREE.Mesh(
         new THREE.PlaneGeometry(W, L),
         new THREE.MeshStandardMaterial({
-          map: sideLabels(spec, labels, f.k, W, L), transparent: true, depthWrite: false,
+          map: sideLabels(spec, f, labels, W, L), transparent: true, depthWrite: false,
           roughness: 0.6, emissive: 0xffffff, emissiveIntensity: 0.28,
           polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
         })
       );
       decal.material.emissiveMap = decal.material.map;
-      const centre = f.bottom.clone().addScaledVector(up, L / 2).addScaledVector(f.normal, 0.0015);
+      const centre = f.bottom.clone().addScaledVector(t, (f.xa + f.xb) / 2).addScaledVector(up, L / 2).addScaledVector(f.normal, 0.0015);
       decal.matrixAutoUpdate = false;
       decal.matrix.makeBasis(t, up, f.normal).setPosition(centre);
       decal.raycast = () => {};
@@ -757,7 +786,6 @@ function hullShape(points) {
   return { shape: new CANNON.ConvexPolyhedron({ vertices, faces }), offset: new CANNON.Vec3(centre.x, centre.y, centre.z) };
 }
 
-const scaled = (spec, k) => ({ s0: spec.s0 * k, r0: spec.r0 * k, s1: spec.s1 * k, r1: spec.r1 * k });
 
 const clockRoot = new THREE.Group();
 scene.add(clockRoot);
@@ -776,13 +804,14 @@ function makeClock({ planes, hint, mass, cutFraction = P.cutFraction }) {
     if (s > best) { best = s; apex = c; }
   }
   const vertex = apex.p.clone();
+  const [pa, pb, pc] = apex.on.map((i) => planes[i]);
   const axis = vertex.clone().normalize();
   const reach = vertex.dot(axis);
   const nearest = Math.max(...corners.filter((c) => c !== apex).map((c) => c.p.dot(axis)));
   const depth = Math.max(cutFraction * reach, nearest + 0.04 * (reach - nearest));
-  const origin = axis.clone().multiplyScalar(depth);
+  const height = reach - depth;
+  const origin = vertex.clone().addScaledVector(axis, -height);
 
-  const [pa, pb, pc] = apex.on.map((i) => planes[i]);
   const tri = [[pa, pb], [pb, pc], [pa, pc]].map(([p, q]) => {
     const e = p.n.clone().cross(q.n).normalize();
     if (e.dot(axis) > 0) e.negate();
@@ -809,7 +838,7 @@ function makeClock({ planes, hint, mass, cutFraction = P.cutFraction }) {
 
   const pointer = new THREE.Group();
   const inset = origin.clone().sub(tip).normalize();
-  const lift = axis.clone().multiplyScalar(0.004);
+  const lift = axis.clone().multiplyScalar(0.001);
   const a = tip.clone().addScaledVector(inset, Math.max(0.09 * scale, 0.05)).add(lift);
   const b = tip.clone().lerp(origin, 0.75).add(lift);
   const line = new THREE.Mesh(new THREE.CylinderGeometry(0.007, 0.007, a.distanceTo(b), 8), glyphMat);
@@ -817,6 +846,8 @@ function makeClock({ planes, hint, mass, cutFraction = P.cutFraction }) {
   line.quaternion.setFromUnitVectors(UP, b.clone().sub(a).normalize());
   const dot = new THREE.Mesh(new THREE.SphereGeometry(0.018, 16, 12), glyphMat);
   dot.position.copy(a);
+  dot.quaternion.setFromUnitVectors(UP, axis);
+  dot.scale.set(1, 0.3, 1);
   pointer.add(line, dot);
   pointer.userData.part = 'body';
   rig.add(pointer);
@@ -825,10 +856,23 @@ function makeClock({ planes, hint, mass, cutFraction = P.cutFraction }) {
   axisGroup.matrixAutoUpdate = false;
   axisGroup.matrix.copy(frame);
   rig.add(axisGroup);
+  const toLocal = frame.clone().invert();
+  const unspin = new THREE.Matrix4().makeRotationZ(-ALIGNED);
+  const sides = [pa, pb, pc].map((f) => {
+    const n = f.n.clone().transformDirection(toLocal).transformDirection(unspin);
+    return { n, d: f.d - f.n.dot(origin), phi: Math.atan2(n.x, -n.y) };
+  }).sort((a, b) => a.phi - b.phi);
+  const [h1, h2] = P.ringSplits.map((f) => f * height);
+  const slab = (s0, s1) => ({ s0, s1, height, sides });
+  const specs = {
+    hour: slab(P.ringFloor, h1),
+    minute: slab(h1 + P.ringGap, h2),
+    cap: slab(h2 + P.ringGap, height),
+  };
   const rings = {
-    hour: buildRing(scaled(P.hour, scale), HOURS, P.bevelWidth),
-    minute: buildRing(scaled(P.minute, scale), MINUTES, P.bevelWidth),
-    cap: buildRing(scaled(P.cap, scale), null, P.bevelWidth),
+    hour: buildRing(specs.hour, HOURS, P.bevelWidth),
+    minute: buildRing(specs.minute, MINUTES, P.bevelWidth),
+    cap: buildRing(specs.cap, null, P.bevelWidth),
   };
   for (const [name, ring] of Object.entries(rings)) {
     ring.userData.part = name;
@@ -838,11 +882,12 @@ function makeClock({ planes, hint, mass, cutFraction = P.cutFraction }) {
   const body = new CANNON.Body({ mass, linearDamping: 0.12, angularDamping: 0.22 });
   const solidHull = hullShape(cornersOf(solidPlanes).map((c) => c.p));
   body.addShape(solidHull.shape, solidHull.offset);
-  const ringPoints = [new THREE.Vector3(0, 0, P.cap.s1 * scale)];
-  for (const spec of [P.hour, P.minute]) {
+  const ringPoints = [new THREE.Vector3(0, 0, height)];
+  for (const spec of [specs.hour, specs.minute]) {
+    const R = Math.max(...ringCorners(sides, spec.s0).map((c) => c.length())) * 0.85;
     for (let i = 0; i < 18; i++) {
-      const t = (i / 18) * TWO_PI, R = 2 * spec.r0 * scale * 0.85;
-      ringPoints.push(new THREE.Vector3(Math.cos(t) * R, Math.sin(t) * R, spec.s0 * scale));
+      const t = (i / 18) * TWO_PI;
+      ringPoints.push(new THREE.Vector3(Math.cos(t) * R, Math.sin(t) * R, spec.s0));
     }
   }
   const ringHull = hullShape(ringPoints.map((p) => p.applyMatrix4(frame)));
@@ -1243,7 +1288,6 @@ function updateReadout() {
   readout.classList.toggle('alarm', T.mode === 'timer' && T.tm.done);
 }
 
-const ALIGNED = Math.PI / 3;
 function ringTargets() {
   if (T.mode === 'timer') {
     const set = Math.max(T.tm.set, 1e-6);
