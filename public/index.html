@@ -466,7 +466,9 @@ const token = (n) => css.getPropertyValue(n).trim();
 const P = {
   cutFraction: 0.48,
   bevelWidth: 0.035,
-  ringSplits: [0.38, 0.72],
+  hourSplits: [0.38, 0.36, 0.34, 0.32, 0.30],
+  capSplit: 0.74,
+  hourToMinute: [1, 1.2],
   ringFloor: 0.008,
   ringGap: 0.004,
 };
@@ -715,13 +717,9 @@ function ringCorners(sides, z) {
     return new THREE.Vector3((ra * ub.y - rb * ua.y) / det, (ua.x * rb - ub.x * ra) / det, 0);
   });
 }
-function buildRing(spec, labels, chamfer) {
-  const z = new THREE.Vector3(0, 0, 1);
-  const planes = [plane(z.clone().negate(), -spec.s0)];
-  if (spec.s1 < spec.height - 1e-6) planes.push(plane(z, spec.s1));
+function ringFaces(spec) {
   const corners = ringCorners(spec.sides, spec.s0);
   const faces = spec.sides.map((side, k) => {
-    planes.push({ n: side.n.clone(), d: side.d });
     const t = tangent(side.phi);
     const xs = [corners[k], corners[(k + 2) % 3]].map((c) => c.dot(t)).sort((a, b) => a - b);
     const r0 = sideReach(side, spec.s0), r1 = sideReach(side, spec.s1);
@@ -737,6 +735,14 @@ function buildRing(spec, labels, chamfer) {
     };
   });
   for (const f of faces) f.L = f.top.distanceTo(f.bottom);
+  return faces;
+}
+function buildRing(spec, labels, chamfer, font) {
+  const z = new THREE.Vector3(0, 0, 1);
+  const planes = [plane(z.clone().negate(), -spec.s0)];
+  if (spec.s1 < spec.height - 1e-6) planes.push(plane(z, spec.s1));
+  for (const side of spec.sides) planes.push({ n: side.n.clone(), d: side.d });
+  const faces = ringFaces(spec);
 
   const ring = new THREE.Group();
   const solid = new THREE.Mesh(chamferedSolid(planes, chamfer), bodyMat);
@@ -746,7 +752,6 @@ function buildRing(spec, labels, chamfer) {
 
   if (labels) {
     const metrics = labelMetrics(labels);
-    const font = ringLabelFont(faces, labels, metrics);
     ring.userData.labelPlans = faces.map((f) => labelPlan(f, labels, metrics, font));
     ring.userData.faces = faces;
     for (const [k, f] of faces.entries()) {
@@ -901,17 +906,25 @@ function makeClock({ planes, hint, mass, cutFraction = P.cutFraction }) {
     const n = f.n.clone().transformDirection(toLocal).transformDirection(unspin);
     return { n, d: f.d - f.n.dot(origin), phi: Math.atan2(n.x, -n.y) };
   }).sort((a, b) => a.phi - b.phi);
-  const [h1, h2] = P.ringSplits.map((f) => f * height);
   const slab = (s0, s1) => ({ s0, s1, height, sides });
-  const specs = {
-    hour: slab(P.ringFloor, h1),
-    minute: slab(h1 + P.ringGap, h2),
-    cap: slab(h2 + P.ringGap, height),
-  };
+  const h2 = P.capSplit * height;
+  const naturalFont = (spec, labels) => ringLabelFont(ringFaces(spec), labels, labelMetrics(labels));
+  let specs, fonts;
+  for (const split of P.hourSplits) {
+    const h1 = split * height;
+    const trial = { hour: slab(P.ringFloor, h1), minute: slab(h1 + P.ringGap, h2), cap: slab(h2 + P.ringGap, height) };
+    const hour = naturalFont(trial.hour, HOURS), minute = naturalFont(trial.minute, MINUTES);
+    if (specs && hour < P.hourToMinute[0] * minute) break;
+    specs = trial;
+    fonts = { hour, minute };
+  }
+  const [lo, hi] = P.hourToMinute;
+  const hourFont = Math.min(fonts.hour, hi * fonts.minute);
+  const minuteFont = Math.min(fonts.minute, hourFont / lo);
   const rings = {
-    hour: buildRing(specs.hour, HOURS, P.bevelWidth),
-    minute: buildRing(specs.minute, MINUTES, P.bevelWidth),
-    cap: buildRing(specs.cap, null, P.bevelWidth),
+    hour: buildRing(specs.hour, HOURS, P.bevelWidth, hourFont),
+    minute: buildRing(specs.minute, MINUTES, P.bevelWidth, minuteFont),
+    cap: buildRing(specs.cap, null, P.bevelWidth, 0),
   };
   for (const [name, ring] of Object.entries(rings)) {
     ring.userData.part = name;
@@ -937,7 +950,7 @@ function makeClock({ planes, hint, mass, cutFraction = P.cutFraction }) {
   rig.traverse((o) => { if (o.isMesh && !o.userData.decal) o.layers.enable(OCCLUDER_LAYER); });
   pointer.traverse((o) => { if (o.isMesh) o.layers.enable(BLOOM_LAYER); });
   const footprint = cornersOf(solidPlanes).map((c) => c.p);
-  const clock = { rig, axisGroup, rings, body, bodyMesh, scale, faces: planes, axis, corners: footprint, anim: null };
+  const clock = { rig, axisGroup, rings, body, bodyMesh, scale, faces: planes, axis, corners: footprint, hourSplit: specs.hour.s1 / height, anim: null };
   rig.userData.clock = clock;
   clockRoot.add(rig);
   clocks.push(clock);
