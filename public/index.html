@@ -494,7 +494,18 @@ function buildRing(spec, labels, chamfer) {
       decal.matrix.makeBasis(t, up, f.normal).setPosition(centre);
       decal.raycast = () => {};
       decal.userData.decal = true;
+      useSkyFog(decal.material);
       ring.add(decal);
+      const glow = new THREE.Mesh(decal.geometry, new THREE.MeshBasicMaterial({
+        map: decal.material.map, color: GLYPH, transparent: true, blending: THREE.AdditiveBlending,
+        depthWrite: false, fog: false, toneMapped: false,
+      }));
+      glow.matrixAutoUpdate = false;
+      glow.matrix.copy(decal.matrix);
+      glow.layers.set(BLOOM_LAYER);
+      glow.raycast = () => {};
+      glow.userData.decal = true;
+      ring.add(glow);
     }
   }
   return ring;
@@ -632,7 +643,10 @@ function makeClock({ planes, hint, mass, cutFraction = P.cutFraction }) {
   body.sleepSpeedLimit = 0.05;
   world.addBody(body);
 
-  const clock = { rig, axisGroup, rings, body, bodyMesh, scale, faces: planes, axis, anim: null };
+  rig.traverse((o) => { if (o.isMesh && !o.userData.decal) o.layers.enable(OCCLUDER_LAYER); });
+  pointer.traverse((o) => { if (o.isMesh) o.layers.enable(BLOOM_LAYER); });
+  const footprint = cornersOf(solidPlanes).map((c) => c.p);
+  const clock = { rig, axisGroup, rings, body, bodyMesh, scale, faces: planes, axis, corners: footprint, anim: null };
   rig.userData.clock = clock;
   clockRoot.add(rig);
   clocks.push(clock);
@@ -1309,14 +1323,44 @@ const outdoor = new THREE.Group();
 outdoor.visible = false;
 scene.add(outdoor);
 const studioFog = scene.fog;
-const outdoorFog = new THREE.Fog(0xcfe0f0, 14, 120);
+const outdoorFog = new THREE.Fog(0xcfe0f0, 5, 36);
 let outdoors = false;
+
+const BLOOM_LAYER = 2;
+const OCCLUDER_LAYER = 3;
+
+const skyFogTarget = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType });
+const skyFogUniforms = {
+  tSkyFog: { value: skyFogTarget.texture },
+  uSkyTexel: { value: new THREE.Vector2(1, 1) },
+  uSkyFog: { value: 0 },
+};
+function patchSkyFog(shader) {
+  Object.assign(shader.uniforms, skyFogUniforms);
+  shader.fragmentShader = shader.fragmentShader
+    .replace('#include <fog_pars_fragment>', `#include <fog_pars_fragment>
+uniform sampler2D tSkyFog; uniform vec2 uSkyTexel; uniform float uSkyFog;`)
+    .replace('#include <fog_fragment>', `#ifdef USE_FOG
+  float fogFactor = smoothstep( fogNear, fogFar, vFogDepth );
+  vec3 fogSky = sRGBTransferOETF( vec4( texture2D( tSkyFog, gl_FragCoord.xy * uSkyTexel ).rgb, 1.0 ) ).rgb;
+  gl_FragColor.rgb = mix( gl_FragColor.rgb, mix( fogColor, fogSky, uSkyFog ), fogFactor );
+#endif`);
+}
+function useSkyFog(material) {
+  const previous = material.onBeforeCompile;
+  material.onBeforeCompile = (shader, r) => {
+    if (previous) previous(shader, r);
+    patchSkyFog(shader);
+  };
+  material.needsUpdate = true;
+}
+useSkyFog(bodyMat);
+useSkyFog(glyphMat);
 
 const skyMat = new THREE.ShaderMaterial({
   uniforms: {
     uZenith: { value: new THREE.Color('#3d7fd6') },
     uHorizon: { value: new THREE.Color('#bcd9f2') },
-    uGround: { value: new THREE.Color('#2c3a26') },
     uSunDir: { value: new THREE.Vector3(0, 1, 0) },
     uSunColor: { value: new THREE.Color('#fff2e2') },
     uGlow: { value: 1 },
@@ -1332,7 +1376,7 @@ const skyMat = new THREE.ShaderMaterial({
       gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
     }`,
   fragmentShader: `
-    uniform vec3 uZenith, uHorizon, uGround, uSunDir, uSunColor, uCloudLight, uCloudShade;
+    uniform vec3 uZenith, uHorizon, uSunDir, uSunColor, uCloudLight, uCloudShade;
     uniform float uGlow, uTime, uCover;
     varying vec3 vDir;
     float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -1343,21 +1387,18 @@ const skyMat = new THREE.ShaderMaterial({
     float fbm(vec2 p) { float v = 0.0, a = 0.5; for (int i = 0; i < 6; i++) { v += a * noise(p); p *= 2.03; a *= 0.5; } return v; }
     void main() {
       vec3 d = normalize(vDir);
-      float up = max(d.y, 0.0);
-      vec3 col = mix(uHorizon, uZenith, pow(up, 0.45));
-      col = mix(col, uGround, smoothstep(0.0, -0.08, d.y));
+      float above = step(0.0, d.y);
+      float ay = abs(d.y);
+      vec3 col = mix(uHorizon, uZenith, pow(ay, 0.45) * above);
       float c = max(dot(d, normalize(uSunDir)), 0.0);
-      col += uSunColor * (pow(c, 6.0) * 0.35 + pow(c, 64.0) * 0.6) * uGlow;
-      float cover = 0.0;
-      if (d.y > 0.0) {
-        vec2 uv = d.xz / (d.y + 0.12) * 1.4 + vec2(uTime * 0.006, uTime * 0.0025);
-        float n = fbm(uv);
-        cover = smoothstep(uCover, uCover + 0.26, n) * smoothstep(0.0, 0.16, d.y);
-        float lit = fbm(uv * 1.7 + 3.0);
-        vec3 cloud = mix(uCloudShade, uCloudLight, 0.4 + 0.6 * lit) + uSunColor * pow(c, 10.0) * 0.4 * uGlow;
-        col = mix(col, cloud, cover * 0.92);
-      }
-      col += uSunColor * smoothstep(0.9993, 0.9997, c) * 4.0 * step(-0.02, uSunDir.y) * (1.0 - cover);
+      col += uSunColor * (pow(c, 6.0) * 0.35 + pow(c, 64.0) * 0.6) * uGlow * above;
+      vec2 uv = d.xz / (ay + 0.12) * 1.4 + vec2(uTime * 0.006, uTime * 0.0025);
+      float n = fbm(uv);
+      float cover = smoothstep(uCover, uCover + 0.26, n) * mix(0.7, smoothstep(0.0, 0.16, ay), above);
+      float lit = fbm(uv * 1.7 + 3.0);
+      vec3 cloud = mix(uCloudShade, uCloudLight, 0.4 + 0.6 * lit) + uSunColor * pow(c, 10.0) * 0.4 * uGlow;
+      col = mix(col, cloud, cover * 0.92);
+      col += uSunColor * smoothstep(0.9993, 0.9997, c) * 4.0 * step(-0.02, uSunDir.y) * (1.0 - cover) * above;
       gl_FragColor = vec4(col, 1.0);
       #include <colorspace_fragment>
     }`,
@@ -1366,6 +1407,8 @@ const skyMat = new THREE.ShaderMaterial({
 const skyDome = new THREE.Mesh(new THREE.SphereGeometry(2000, 48, 24), skyMat);
 skyDome.renderOrder = -2;
 outdoor.add(skyDome);
+const skyFogScene = new THREE.Scene();
+skyFogScene.add(new THREE.Mesh(new THREE.SphereGeometry(2000, 48, 24), skyMat));
 
 const skyEnvScene = new THREE.Scene();
 skyEnvScene.add(new THREE.Mesh(new THREE.SphereGeometry(500, 32, 16), skyMat));
@@ -1379,25 +1422,27 @@ grassTex.wrapS = grassTex.wrapT = THREE.RepeatWrapping;
 grassTex.repeat.set(140, 140);
 grassTex.colorSpace = THREE.SRGBColorSpace;
 grassTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
-const lawn = new THREE.Mesh(
-  new THREE.CircleGeometry(180, 96),
-  new THREE.MeshStandardMaterial({ map: grassTex, roughness: 1, color: 0xc9d8b8 })
-);
+const lawnMat = new THREE.MeshStandardMaterial({ map: grassTex, roughness: 1, color: 0xf2ffe6 });
+useSkyFog(lawnMat);
+const lawn = new THREE.Mesh(new THREE.CircleGeometry(180, 96), lawnMat);
 lawn.rotation.x = -Math.PI / 2;
 lawn.position.y = -1.001;
 lawn.receiveShadow = true;
 outdoor.add(lawn);
 
-const BLADES = 36000;
+const BLADES = 72000;
+const GRASS_RADIUS = 26;
 const BLADE_H = 0.26;
-const bladeGeo = new THREE.PlaneGeometry(0.04, BLADE_H, 1, 4);
+const MAX_OBSTACLES = 16;
+const obstacles = { value: Array.from({ length: MAX_OBSTACLES }, () => new THREE.Vector4()) };
+const bladeGeo = new THREE.PlaneGeometry(0.045, BLADE_H, 1, 4);
 bladeGeo.translate(0, BLADE_H / 2, 0);
 {
   const pos = bladeGeo.attributes.position;
   const col = [];
   for (let i = 0; i < pos.count; i++) {
     const t = pos.getY(i) / BLADE_H;
-    col.push(0.3 + 0.45 * t, 0.38 + 0.4 * t, 0.26 + 0.34 * t);
+    col.push(0.62 + 0.22 * t, 0.66 + 0.2 * t, 0.56 + 0.16 * t);
   }
   bladeGeo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
 }
@@ -1405,29 +1450,53 @@ const wind = { value: 0 };
 const bladeMat = new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide, roughness: 0.85 });
 bladeMat.onBeforeCompile = (shader) => {
   shader.uniforms.uWind = wind;
-  shader.vertexShader = 'uniform float uWind;\n' + shader.vertexShader.replace('#include <begin_vertex>', `
+  shader.uniforms.uObstacles = obstacles;
+  shader.vertexShader = `uniform float uWind;\nuniform vec4 uObstacles[${MAX_OBSTACLES}];\n` + shader.vertexShader.replace('#include <beginnormal_vertex>', `
+    vec3 objectNormal = normalize(vec3(normal.x * 0.35, 1.0, normal.z * 0.35));
+    #ifdef USE_TANGENT
+      vec3 objectTangent = vec3(tangent.xyz);
+    #endif`).replace('#include <begin_vertex>', `
     vec3 transformed = vec3(position);
     float h = clamp(position.y / ${BLADE_H.toFixed(3)}, 0.0, 1.0);
     transformed.x *= 1.0 - 0.9 * h;
     vec4 root = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+    mat3 toLocal = inverse(mat3(instanceMatrix));
     float gust = sin(uWind * 1.7 + root.x * 0.6 + root.z * 0.4) * 0.6 + sin(uWind * 3.3 + root.x * 1.9 - root.z * 1.3) * 0.25;
-    transformed += (inverse(mat3(instanceMatrix)) * vec3(1.0, 0.0, 0.35)) * gust * 0.07 * h * h;`);
+    vec2 push = vec2(0.0);
+    float sink = 0.0;
+    for (int i = 0; i < ${MAX_OBSTACLES}; i++) {
+      vec4 ob = uObstacles[i];
+      if (ob.w <= 0.0) continue;
+      vec2 dv = root.xz - ob.xy;
+      float dist = length(dv);
+      float k = 1.0 - smoothstep(ob.z - 0.05, ob.w + 0.35, dist);
+      push += dv / max(dist, 0.001) * k;
+      sink = max(sink, 1.0 - smoothstep(ob.z - 0.22, ob.z - 0.04, dist));
+    }
+    float shove = min(length(push), 1.0);
+    vec2 away = shove > 0.0 ? normalize(push) * shove : vec2(0.0);
+    vec3 bend = vec3(1.0, 0.0, 0.35) * gust * 0.07 * (1.0 - shove) + vec3(away.x, -0.45 * shove, away.y) * 0.17;
+    transformed += toLocal * bend * h * h;
+    transformed.y *= 1.0 - sink;`);
+  patchSkyFog(shader);
 };
 const blades = new THREE.InstancedMesh(bladeGeo, bladeMat, BLADES);
 {
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), p = new THREE.Vector3();
   const e = new THREE.Euler(), c = new THREE.Color();
   for (let i = 0; i < BLADES; i++) {
-    const r = 12 * Math.sqrt(Math.random()), a = Math.random() * TWO_PI;
+    const r = GRASS_RADIUS * Math.sqrt(Math.random()), a = Math.random() * TWO_PI;
     p.set(Math.cos(a) * r, -1.002, Math.sin(a) * r);
     q.setFromEuler(e.set((Math.random() - 0.5) * 0.35, Math.random() * TWO_PI, (Math.random() - 0.5) * 0.35));
-    sc.set(1, 0.6 + Math.random() * 0.8, 1);
+    const grow = 1 + (r / GRASS_RADIUS) * 0.7;
+    sc.set(grow, (0.6 + Math.random() * 0.8) * grow, grow);
     blades.setMatrixAt(i, m.compose(p, q, sc));
-    c.setHSL(0.24 + Math.random() * 0.06, 0.45 + Math.random() * 0.2, 0.22 + Math.random() * 0.12);
+    c.setHSL(0.25 + Math.random() * 0.05, 0.5 + Math.random() * 0.15, 0.27 + Math.random() * 0.08);
     blades.setColorAt(i, c);
   }
 }
 blades.receiveShadow = true;
+blades.frustumCulled = false;
 outdoor.add(blades);
 
 const starGeo = new THREE.BufferGeometry();
@@ -1470,21 +1539,110 @@ const moonLight = new THREE.DirectionalLight(0x9fb7ff, 0);
 moonLight.shadow.mapSize.set(2048, 2048);
 moonLight.shadow.camera.left = -9; moonLight.shadow.camera.right = 9;
 moonLight.shadow.camera.top = 9; moonLight.shadow.camera.bottom = -9;
-moonLight.shadow.camera.near = 2; moonLight.shadow.camera.far = 26;
+moonLight.shadow.camera.near = 2; moonLight.shadow.camera.far = 30;
 moonLight.shadow.radius = 9;
 moonLight.shadow.blurSamples = 24;
 moonLight.shadow.bias = -0.0006;
+moonLight.shadow.intensity = 0.75;
 scene.add(moonLight, moonLight.target);
+const nightFill = new THREE.DirectionalLight(0x8fa3d6, 0);
+scene.add(nightFill, nightFill.target);
 
-const sunDir = new THREE.Vector3(0, 1, 0), moonDir = new THREE.Vector3(0, -1, 0);
+const bloomA = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType });
+const bloomB = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType });
+const blackMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+const blurMat = new THREE.ShaderMaterial({
+  uniforms: { tInput: { value: null }, uDir: { value: new THREE.Vector2() } },
+  vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+  fragmentShader: `
+    uniform sampler2D tInput; uniform vec2 uDir; varying vec2 vUv;
+    void main() {
+      vec3 c = texture2D(tInput, vUv).rgb * 0.227;
+      c += (texture2D(tInput, vUv + uDir * 1.385).rgb + texture2D(tInput, vUv - uDir * 1.385).rgb) * 0.316;
+      c += (texture2D(tInput, vUv + uDir * 3.231).rgb + texture2D(tInput, vUv - uDir * 3.231).rgb) * 0.07;
+      gl_FragColor = vec4(c, 1.0);
+    }`,
+  depthTest: false, depthWrite: false,
+});
+const bloomMixMat = new THREE.ShaderMaterial({
+  uniforms: { tBloom: { value: bloomA.texture }, uStrength: { value: 0 } },
+  vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+  fragmentShader: `
+    uniform sampler2D tBloom; uniform float uStrength; varying vec2 vUv;
+    void main() { gl_FragColor = vec4(texture2D(tBloom, vUv).rgb * uStrength, 1.0); }`,
+  transparent: true, blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false, toneMapped: false,
+});
+const postScene = new THREE.Scene();
+const postQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), blurMat);
+postQuad.frustumCulled = false;
+postScene.add(postQuad);
+let bloomStrength = 0;
+
+function renderBloom() {
+  if (bloomStrength < 0.02) return;
+  const background = scene.background, fog = scene.fog;
+  const clearAlpha = renderer.getClearAlpha();
+  renderer.getClearColor(_clear);
+  scene.background = null;
+  scene.fog = null;
+  renderer.shadowMap.autoUpdate = false;
+  renderer.setRenderTarget(bloomA);
+  renderer.setClearColor(0x000000, 1);
+  renderer.clear();
+  camera.layers.set(OCCLUDER_LAYER);
+  scene.overrideMaterial = blackMat;
+  renderer.render(scene, camera);
+  scene.overrideMaterial = null;
+  camera.layers.set(BLOOM_LAYER);
+  renderer.autoClear = false;
+  renderer.render(scene, camera);
+  renderer.autoClear = true;
+  camera.layers.set(0);
+  scene.background = background;
+  scene.fog = fog;
+  renderer.shadowMap.autoUpdate = true;
+  postQuad.material = blurMat;
+  for (const spread of [1, 2.5]) {
+    blurMat.uniforms.tInput.value = bloomA.texture;
+    blurMat.uniforms.uDir.value.set(spread / bloomA.width, 0);
+    renderer.setRenderTarget(bloomB);
+    renderer.render(postScene, outlineCam);
+    blurMat.uniforms.tInput.value = bloomB.texture;
+    blurMat.uniforms.uDir.value.set(0, spread / bloomA.height);
+    renderer.setRenderTarget(bloomA);
+    renderer.render(postScene, outlineCam);
+  }
+  renderer.setRenderTarget(null);
+  renderer.setClearColor(_clear, clearAlpha);
+  postQuad.material = bloomMixMat;
+  bloomMixMat.uniforms.uStrength.value = bloomStrength;
+  renderer.autoClear = false;
+  renderer.render(postScene, outlineCam);
+  renderer.autoClear = true;
+}
+
+function renderSkyFog() {
+  renderer.setRenderTarget(skyFogTarget);
+  renderer.render(skyFogScene, camera);
+  renderer.setRenderTarget(null);
+}
+
+const sunDir = new THREE.Vector3(0, 1, 0), moonDir = new THREE.Vector3(0, -1, 0), lightDir = new THREE.Vector3();
 const tint = new THREE.Color();
 const SKY_DAY = new THREE.Color('#bcd9f2'), SKY_DUSK = new THREE.Color('#f39a5c'), SKY_NIGHT = new THREE.Color('#0d1830');
 const ZENITH_DAY = new THREE.Color('#3d7fd6'), ZENITH_DUSK = new THREE.Color('#2b3f72'), ZENITH_NIGHT = new THREE.Color('#03060f');
+const MIN_SHADOW_ELEVATION = 0.42;
 
 function placeBodies(seconds) {
   const h = (seconds / 86400 - 0.25) * TWO_PI;
   sunDir.set(Math.cos(h), Math.sin(h) * 0.85, -Math.sin(h) * 0.45 - 0.35).normalize();
   moonDir.set(-Math.cos(h), -Math.sin(h) * 0.85, Math.sin(h) * 0.45 - 0.35).normalize();
+}
+
+function aimLight(light, dir) {
+  lightDir.copy(dir);
+  lightDir.y = Math.max(lightDir.y, MIN_SHADOW_ELEVATION);
+  light.position.copy(lightDir.normalize()).multiplyScalar(25);
 }
 
 function refreshSkyEnv(time) {
@@ -1496,6 +1654,30 @@ function refreshSkyEnv(time) {
   lastEnvTime = time;
 }
 
+const _corner = new THREE.Vector3();
+function updateObstacles() {
+  let n = 0;
+  for (const c of clocks) {
+    if (n >= MAX_OBSTACLES) break;
+    const pts = c.corners.map((p) => _corner.copy(p).applyMatrix4(c.rig.matrixWorld).clone());
+    const low = Math.min(...pts.map((p) => p.y));
+    if (low > -0.55) continue;
+    const ground = pts.filter((p) => p.y < low + 0.35);
+    const cx = ground.reduce((s, p) => s + p.x, 0) / ground.length;
+    const cz = ground.reduce((s, p) => s + p.z, 0) / ground.length;
+    const outer = Math.max(...ground.map((p) => Math.hypot(p.x - cx, p.z - cz)));
+    const ring = ground.map((p) => [p.x - cx, p.z - cz]).sort((a, b) => Math.atan2(a[1], a[0]) - Math.atan2(b[1], b[0]));
+    let inner = outer;
+    for (let i = 0; i < ring.length; i++) {
+      const [ax, az] = ring[i], [bx, bz] = ring[(i + 1) % ring.length];
+      const len = Math.hypot(bx - ax, bz - az);
+      if (len > 1e-3) inner = Math.min(inner, Math.abs(ax * bz - az * bx) / len);
+    }
+    obstacles.value[n++].set(cx, cz, inner, outer);
+  }
+  for (; n < MAX_OBSTACLES; n++) obstacles.value[n].set(0, 0, 0, 0);
+}
+
 function updateOutdoor(time) {
   placeBodies(clockSeconds());
   const e = sunDir.y;
@@ -1503,33 +1685,38 @@ function updateOutdoor(time) {
   const dusk = Math.exp(-Math.pow(e / 0.13, 2));
   const night = 1 - THREE.MathUtils.smoothstep(e, -0.22, 0.0);
 
-  key.position.copy(sunDir).multiplyScalar(25);
+  aimLight(key, sunDir);
   key.intensity = 4.2 * THREE.MathUtils.smoothstep(e, -0.03, 0.18);
   key.color.set('#fff2e2').lerp(tint.set('#ff9a5a'), dusk * 0.85);
-  moonLight.position.copy(moonDir).multiplyScalar(25);
-  moonLight.intensity = 1.8 * night * THREE.MathUtils.smoothstep(moonDir.y, 0.0, 0.25);
+  key.shadow.intensity = THREE.MathUtils.smoothstep(e, 0.02, 0.3);
+  aimLight(moonLight, moonDir);
+  moonLight.intensity = 2.4 * night * THREE.MathUtils.smoothstep(moonDir.y, 0.0, 0.25);
   const sunLeads = key.intensity >= moonLight.intensity;
   if (key.castShadow !== sunLeads) {
     key.castShadow = sunLeads;
     moonLight.castShadow = !sunLeads;
   }
-  hemi.color.copy(SKY_DAY).lerp(SKY_DUSK, dusk * 0.6).lerp(tint.set('#3a4a72'), night);
-  hemi.groundColor.set('#3d5a2a').lerp(tint.set('#0b120a'), night);
-  hemi.intensity = 0.3 + 0.8 * day + 0.5 * night;
-  rim.intensity = 0.4 * day;
+  hemi.color.copy(SKY_DAY).lerp(SKY_DUSK, dusk * 0.6).lerp(tint.set('#5a6c9c'), night);
+  hemi.groundColor.set('#3d5a2a').lerp(tint.set('#1a2418'), night);
+  hemi.intensity = 0.3 + 0.8 * day + 1.0 * night;
+  rim.intensity = 0.4 * day + 0.6 * night;
+  rim.color.set('#d6e4ff');
   outdoorFog.color.copy(SKY_DAY).lerp(SKY_DUSK, dusk).lerp(SKY_NIGHT, night);
   skyMat.uniforms.uHorizon.value.copy(outdoorFog.color);
   skyMat.uniforms.uZenith.value.copy(ZENITH_DAY).lerp(ZENITH_DUSK, dusk).lerp(ZENITH_NIGHT, night);
-  skyMat.uniforms.uGround.value.set('#2c3a26').lerp(tint.set('#05080a'), night);
   skyMat.uniforms.uSunDir.value.copy(sunDir);
   skyMat.uniforms.uSunColor.value.copy(key.color);
   skyMat.uniforms.uGlow.value = Math.max(day, dusk) * (1 - night);
-  scene.environmentIntensity = 0.12 + 0.38 * day;
-  renderer.toneMappingExposure = THREE.MathUtils.lerp(1.35, 0.9, day);
-
   skyMat.uniforms.uTime.value = time;
   skyMat.uniforms.uCloudLight.value.set('#ffffff').lerp(tint.set('#ffb48a'), dusk).lerp(tint.set('#3e4963'), night);
   skyMat.uniforms.uCloudShade.value.set('#a9b4c6').lerp(tint.set('#7a5a78'), dusk).lerp(tint.set('#111725'), night);
+  scene.environmentIntensity = 0.24 + 0.1 * day;
+  nightFill.position.copy(camera.position).sub(controls.target).normalize().multiplyScalar(20).add(controls.target);
+  nightFill.target.position.copy(controls.target);
+  nightFill.intensity = 1.6 * night;
+  renderer.toneMappingExposure = THREE.MathUtils.lerp(1.55, 0.9, day);
+  bloomStrength = 1.6 * night;
+
   starMat.opacity = night * 0.9;
   moon.position.copy(moonDir).multiplyScalar(900);
   moonGlow.position.copy(moonDir).multiplyScalar(905);
@@ -1539,6 +1726,7 @@ function updateOutdoor(time) {
   moon.material.opacity = 0.35 + 0.65 * night;
   moonGlow.material.opacity = 0.45 * night;
   wind.value = time;
+  updateObstacles();
 
   if (time - lastEnvTime > 0.4 && sunDir.angleTo(lastEnvSun) > 0.02) refreshSkyEnv(time);
   document.body.classList.toggle('night', night > 0.55);
@@ -1550,6 +1738,7 @@ function setOutdoors(on) {
   floor.visible = !on;
   scene.background = on ? null : groundColor;
   scene.fog = on ? outdoorFog : studioFog;
+  skyFogUniforms.uSkyFog.value = on ? 1 : 0;
   camera.far = on ? 6000 : 100;
   camera.updateProjectionMatrix();
   camera.position.set(...(on ? [-4.8, 0.75, 8.6] : [-3.4, 2.6, 6.4]));
@@ -1564,13 +1753,16 @@ function setOutdoors(on) {
     key.intensity = 2.3;
     key.color.set(0xfff1df);
     key.castShadow = true;
+    key.shadow.intensity = 1;
     moonLight.intensity = 0;
     moonLight.castShadow = false;
+    nightFill.intensity = 0;
     hemi.color.set(0xfff8ee);
     hemi.groundColor.set(0x8a7b6a);
     hemi.intensity = 0.42;
     rim.intensity = 1.4;
     renderer.toneMappingExposure = 1.05;
+    bloomStrength = 0;
     document.body.classList.remove('night');
   }
   $('outdoors').setAttribute('aria-pressed', String(on));
@@ -1592,6 +1784,10 @@ function resize() {
   camera.updateProjectionMatrix();
   const px = renderer.getDrawingBufferSize(new THREE.Vector2());
   maskTarget.setSize(px.x, px.y);
+  skyFogTarget.setSize(Math.ceil(px.x / 2), Math.ceil(px.y / 2));
+  skyFogUniforms.uSkyTexel.value.set(1 / px.x, 1 / px.y);
+  bloomA.setSize(Math.ceil(px.x / 2), Math.ceil(px.y / 2));
+  bloomB.setSize(Math.ceil(px.x / 2), Math.ceil(px.y / 2));
   outlineMat.uniforms.uTexel.value.set(1 / px.x, 1 / px.y);
 }
 window.addEventListener('resize', resize);
@@ -1632,8 +1828,12 @@ build().then(() => {
     _focus.set(m.x, m.y + (outdoors ? 0.6 : 0.25), m.z);
     controls.target.lerp(_focus, 0.05);
     controls.update();
-    if (outdoors) updateOutdoor(now / 1000);
+    if (outdoors) {
+      updateOutdoor(now / 1000);
+      renderSkyFog();
+    }
     renderer.render(scene, camera);
+    renderBloom();
     renderOutline(now / 1000);
   });
 }).catch((err) => {

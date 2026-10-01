@@ -75,13 +75,15 @@ Drag any selected clock and the whole selection comes with it: one tube runs fro
 
 ### Outdoors
 
-**Outdoors** moves the scene onto a lawn under an open sky. The sun follows the clock's time, so the light changes through the day: blue sky and clouds at noon, a warm sunset, then stars and moonlight. Drag or fling the hands, or use **Fast**, to run through a day in seconds. The grass blows in the wind and the clouds drift.
+**Outdoors** moves the scene onto a lawn under an open sky. The sun follows the clock's time, so the light changes through the day: blue sky and clouds at noon, a warm sunset, then stars and moonlight, with the numerals glowing in the dark. Drag or fling the hands, or use **Fast**, to run through a day in seconds. The grass blows in the wind, leans away from the clocks standing in it, and fades into the sky in the distance.
 
 | Noon | Sunset |
 | --- | --- |
 | ![Noon](docs/images/outdoor-noon.jpg) | ![Sunset](docs/images/outdoor-sunset.jpg) |
 
-![Night, with stars and moonlit clouds](docs/images/outdoor-night.jpg)
+![Night, with stars, moonlit clouds and glowing numerals](docs/images/outdoor-night.jpg)
+
+![A clock standing in the grass](docs/images/outdoor-grass.jpg)
 
 ### Stopwatch
 
@@ -135,7 +137,9 @@ Selected clocks are drawn a second time, flat white, into an offscreen mask. A f
 
 ### Outdoors
 
-The sky is a shader dome that blends zenith and horizon colours for day, dusk and night, with a sun disc and glow, and fbm clouds projected onto a layer above the scene. The sun and moon positions come from the clock's time. A directional sun and a cool moonlight hand the shadows between them. The lawn texture and the moon were generated with Gemini. The grass blades are about 36,000 instanced quads that a vertex shader bends in the wind.
+The sky is a shader dome that blends zenith and horizon colours for day, dusk and night, with a sun disc and glow, and fbm clouds projected onto a layer above the scene and mirrored below the horizon. Each frame the sky is also rendered on its own, and fog fades distant ground into that render, so far-off grass dissolves into sky and cloud. The sun and moon positions come from the clock's time. A directional sun and a cool moonlight hand the shadows between them; the shadow light never drops below about 25° and its shadows fade near the horizon, so low sun doesn't streak shadows across the lawn. At night a soft fill light from the camera keeps the black bodies readable, and the numerals get a bloom pass: their glow is rendered on its own, behind black copies of the bodies so nothing glows through them, blurred, and added on top.
+
+The lawn texture and the moon were generated with Gemini. The grass is about 72,000 instanced blades that a vertex shader bends in the wind, lit as if they faced up so they match the lawn beneath. Each frame every clock's footprint on the ground is measured, and blades close to a body lean away from it, while blades inside the footprint sink out of sight.
 
 ### Light
 
