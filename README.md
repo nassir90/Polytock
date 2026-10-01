@@ -1,6 +1,6 @@
 # Polytock
 
-A clock you can pick up and throw. Polytock is a WebGL model of a black cube clock with one corner sliced off, where three stacked triangular rings turn on the cube's diagonal to show the hours, minutes and seconds. It runs in the browser with real physics, it doubles as a stopwatch and a timer, and you can drop in more clocks built from other polyhedra.
+A clock you can pick up and throw. Polytock is a WebGL model of a black cube clock with one corner sliced off, where three stacked triangular rings turn on the cube's diagonal to show the hours, minutes and seconds. It runs in the browser with real physics, it doubles as a stopwatch and a timer, you can drop in more clocks built from other polyhedra, and you can take the whole thing outdoors into a day that follows the clock.
 
 **Play it: [mpts.ie/games/polytock](https://mpts.ie/games/polytock/)**
 
@@ -26,7 +26,7 @@ The hour ring moves smoothly, so at 10:08 the pointer sits just past the 10, a l
 
 ### Turn the rings by hand
 
-Grab any ring and turn it. The ring follows your pointer and the time moves with it: the hour ring in hours, the minute ring in minutes and the cap in seconds. In clock mode a **Back to now** button appears once you have moved the time away from the real one. **Fast** runs one clock hour every six seconds so you can watch the rings go round.
+Grab any ring and turn it. The ring follows your pointer and the time moves with it: the hour ring in hours, the minute ring in minutes and the cap in seconds. Flick a ring and let go, and it keeps spinning, then slows back to normal time. In clock mode a **Back to now** button appears once you have moved the time away from the real one. **Fast** runs one clock hour every six seconds so you can watch the rings go round.
 
 ### Drop in more clocks
 
@@ -37,7 +37,7 @@ The shelf on the left drops in four more clocks, each built from a polyhedron wh
 - a **dodecahedron** (twelve pentagons)
 - a **truncated octahedron** (eight hexagons and six squares)
 
-Each one is a working clock with its own cut corner, pointer and ring stack, sized to its cut. They all keep the same time, they collide with each other, and **Clear** removes them.
+Each one is a working clock with its own cut corner, pointer and ring stack, sized to its cut. The tetrahedron is cut deep, so its rings make up most of the pyramid. They all keep the same time, they collide with each other, and **Clear** removes them.
 
 ![The whole family](docs/images/family.jpg)
 
@@ -69,9 +69,19 @@ Click a clock to select it, and shift-click to add or remove more. Selected cloc
 | --- | --- |
 | ![Standing up, in the air](docs/images/stand-up-midair.jpg) | ![Standing up, landed](docs/images/stand-up-landed.jpg) |
 
-Drag any selected clock and the whole selection comes with it, each on its own tube, keeping their spacing.
+Drag any selected clock and the whole selection comes with it: one tube runs from each clock to the same ball under your pointer.
 
 ![Dragging three selected clocks together](docs/images/group-pull.jpg)
+
+### Outdoors
+
+**Outdoors** moves the scene onto a lawn under an open sky. The sun follows the clock's time, so the light changes through the day: blue sky and clouds at noon, a warm sunset, then stars and moonlight. Drag or fling the hands, or use **Fast**, to run through a day in seconds. The grass blows in the wind and the clouds drift.
+
+| Noon | Sunset |
+| --- | --- |
+| ![Noon](docs/images/outdoor-noon.jpg) | ![Sunset](docs/images/outdoor-sunset.jpg) |
+
+![Night, with stars and moonlit clouds](docs/images/outdoor-night.jpg)
 
 ### Stopwatch
 
@@ -115,13 +125,17 @@ A clock is built from any such solid in the same way:
 
 ### Rounded edges without extra geometry
 
-Each edge gets a narrow bevel plane at the bisecting angle, the same absolute width on every body and ring whatever its size. The bevel strips stay flat, but their vertex normals blend from one face's normal to the next, and the corner patches where bevels meet average every face they connect. The result shades like a smooth fillet with no extra triangles.
+Each edge gets a narrow bevel plane at the bisecting angle. Its depth is set from the angle between the two faces, so the bevel shows the same width on every edge of every body and ring, whatever the shape or size. The bevel strips stay flat, but their vertex normals blend from one face's normal to the next, and the corner patches where bevels meet average every face they connect. The result shades like a smooth fillet with no extra triangles.
 
 ![Bevel close-up](docs/images/bevels.jpg)
 
 ### Selection outline
 
 Selected clocks are drawn a second time, flat white, into an offscreen mask. A full-screen shader then samples that mask in rings around each pixel and paints grey wherever a pixel sits just outside a selected silhouette. Its opacity pulses on a 1.4 second cycle.
+
+### Outdoors
+
+The sky is a shader dome that blends zenith and horizon colours for day, dusk and night, with a sun disc and glow, and fbm clouds projected onto a layer above the scene. The sun and moon positions come from the clock's time. A directional sun and a cool moonlight hand the shadows between them. The lawn texture and the moon were generated with Gemini. The grass blades are about 36,000 instanced quads that a vertex shader bends in the wind.
 
 ### Light
 
