@@ -466,9 +466,7 @@ const token = (n) => css.getPropertyValue(n).trim();
 const P = {
   cutFraction: 0.48,
   bevelWidth: 0.035,
-  hourSplits: [0.38, 0.36, 0.34, 0.32, 0.30],
-  capSplit: 0.74,
-  hourToMinute: [1, 1.2],
+  ringSplits: [0.38, 0.72],
   ringFloor: 0.008,
   ringGap: 0.004,
 };
@@ -643,11 +641,11 @@ const labelMetrics = (() => {
     return { widths: labels.map((t) => ctx.measureText(t).width / 100), ascent: ctx.measureText('0123456789').actualBoundingBoxAscent / 100 };
   };
 })();
-function labelPlan(face, labels, metrics, font) {
+function labelPlan(face, labels, metrics, font, centre = LABEL.centre) {
   const dotR = LABEL.dotRadius * font;
   const gap = LABEL.dotGap * font;
   const height = 2 * dotR + gap + metrics.ascent * font;
-  const dotY = LABEL.centre * face.L - height / 2 + dotR;
+  const dotY = centre * face.L - height / 2 + dotR;
   const baseY = dotY + dotR + gap;
   const rDot = face.r0 + (face.r1 - face.r0) * (dotY / face.L);
   const reach = rDot / face.r0;
@@ -663,11 +661,11 @@ function labelPlan(face, labels, metrics, font) {
   items.sort((a, b) => a.x - b.x);
   return { font, dotR, gap, dotY, baseY, rDot, items };
 }
-function ringLabelFont(faces, labels, metrics) {
+function ringLabelFont(faces, labels, metrics, centre) {
   let font = Math.min(...faces.map((f) => LABEL.maxHeight * f.L));
   for (let pass = 0; pass < 4; pass++) {
     for (const f of faces) {
-      const { items } = labelPlan(f, labels, metrics, font);
+      const { items } = labelPlan(f, labels, metrics, font, centre);
       for (let j = 1; j < items.length; j++) {
         const need = (items[j - 1].w + items[j].w) / 2 + LABEL.minGap;
         font = Math.min(font, (items[j].x - items[j - 1].x) / need);
@@ -737,7 +735,7 @@ function ringFaces(spec) {
   for (const f of faces) f.L = f.top.distanceTo(f.bottom);
   return faces;
 }
-function buildRing(spec, labels, chamfer, font) {
+function buildRing(spec, labels, chamfer, font, centre) {
   const z = new THREE.Vector3(0, 0, 1);
   const planes = [plane(z.clone().negate(), -spec.s0)];
   if (spec.s1 < spec.height - 1e-6) planes.push(plane(z, spec.s1));
@@ -752,7 +750,7 @@ function buildRing(spec, labels, chamfer, font) {
 
   if (labels) {
     const metrics = labelMetrics(labels);
-    ring.userData.labelPlans = faces.map((f) => labelPlan(f, labels, metrics, font));
+    ring.userData.labelPlans = faces.map((f) => labelPlan(f, labels, metrics, font, centre));
     ring.userData.faces = faces;
     for (const [k, f] of faces.entries()) {
       const W = f.xb - f.xa;
@@ -838,7 +836,7 @@ const clocks = [];
 const OUTLINE_LAYER = 1;
 const selection = new Set();
 
-function makeClock({ planes, hint, mass, cutFraction = P.cutFraction }) {
+function makeClock({ planes, hint, mass, cutFraction = P.cutFraction, labelStyle = {} }) {
   const corners = cornersOf(planes);
   const aim = hint.clone().normalize();
   let apex = null, best = -Infinity;
@@ -907,23 +905,15 @@ function makeClock({ planes, hint, mass, cutFraction = P.cutFraction }) {
     return { n, d: f.d - f.n.dot(origin), phi: Math.atan2(n.x, -n.y) };
   }).sort((a, b) => a.phi - b.phi);
   const slab = (s0, s1) => ({ s0, s1, height, sides });
-  const h2 = P.capSplit * height;
-  const naturalFont = (spec, labels) => ringLabelFont(ringFaces(spec), labels, labelMetrics(labels));
-  let specs, fonts;
-  for (const split of P.hourSplits) {
-    const h1 = split * height;
-    const trial = { hour: slab(P.ringFloor, h1), minute: slab(h1 + P.ringGap, h2), cap: slab(h2 + P.ringGap, height) };
-    const hour = naturalFont(trial.hour, HOURS), minute = naturalFont(trial.minute, MINUTES);
-    if (specs && hour < P.hourToMinute[0] * minute) break;
-    specs = trial;
-    fonts = { hour, minute };
-  }
-  const [lo, hi] = P.hourToMinute;
-  const hourFont = Math.min(fonts.hour, hi * fonts.minute);
-  const minuteFont = Math.min(fonts.minute, hourFont / lo);
+  const [h1, h2] = P.ringSplits.map((f) => f * height);
+  const specs = { hour: slab(P.ringFloor, h1), minute: slab(h1 + P.ringGap, h2), cap: slab(h2 + P.ringGap, height) };
+  const { hourToMinute = Infinity, minuteCentre = LABEL.centre } = labelStyle;
+  const naturalFont = (spec, labels, centre) => ringLabelFont(ringFaces(spec), labels, labelMetrics(labels), centre);
+  const minuteFont = naturalFont(specs.minute, MINUTES, minuteCentre);
+  const hourFont = Math.min(naturalFont(specs.hour, HOURS), hourToMinute * minuteFont);
   const rings = {
     hour: buildRing(specs.hour, HOURS, P.bevelWidth, hourFont),
-    minute: buildRing(specs.minute, MINUTES, P.bevelWidth, minuteFont),
+    minute: buildRing(specs.minute, MINUTES, P.bevelWidth, minuteFont, minuteCentre),
     cap: buildRing(specs.cap, null, P.bevelWidth, 0),
   };
   for (const [name, ring] of Object.entries(rings)) {
@@ -950,7 +940,7 @@ function makeClock({ planes, hint, mass, cutFraction = P.cutFraction }) {
   rig.traverse((o) => { if (o.isMesh && !o.userData.decal) o.layers.enable(OCCLUDER_LAYER); });
   pointer.traverse((o) => { if (o.isMesh) o.layers.enable(BLOOM_LAYER); });
   const footprint = cornersOf(solidPlanes).map((c) => c.p);
-  const clock = { rig, axisGroup, rings, body, bodyMesh, scale, faces: planes, axis, corners: footprint, hourSplit: specs.hour.s1 / height, anim: null };
+  const clock = { rig, axisGroup, rings, body, bodyMesh, scale, faces: planes, axis, corners: footprint, anim: null };
   rig.userData.clock = clock;
   clockRoot.add(rig);
   clocks.push(clock);
@@ -990,11 +980,17 @@ function truncatedOctahedronPlanes(s) {
   return planes;
 }
 const SHAPES = {
-  tetrahedron: () => ({ planes: [[1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1]].map((n) => plane(new THREE.Vector3(...n), 0.56)), cutFraction: 0.08 }),
+  tetrahedron: () => ({
+    planes: [[1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1]].map((n) => plane(new THREE.Vector3(...n), 0.56)),
+    cutFraction: 0.08,
+    labelStyle: { hourToMinute: TETRA_HOUR_TO_MINUTE, minuteCentre: TETRA_MINUTE_CENTRE },
+  }),
   cube: () => ({ planes: cubePlanes(0.78, 0) }),
   dodecahedron: () => ({ planes: dodecahedronPlanes(1.02) }),
   truncatedOctahedron: () => ({ planes: truncatedOctahedronPlanes(0.6) }),
 };
+const TETRA_HOUR_TO_MINUTE = 1.6;
+const TETRA_MINUTE_CENTRE = 0.34;
 const MAX_EXTRA = 12;
 
 let mainClock = null;
