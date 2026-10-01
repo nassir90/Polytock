@@ -632,39 +632,73 @@ const planeThrough = (n, point) => { const u = n.clone().normalize(); return { n
 
 const labelAngle = (i) => THREE.MathUtils.degToRad(30 * i - 45);
 
-function sideLabels(spec, face, labels, W, L) {
+const LABEL_FONT = 'Jost, Futura, "Avenir Next", sans-serif';
+const LABEL = { maxHeight: 0.34, minGap: 0.75, dotRadius: 0.1, dotGap: 0.62, centre: 0.47 };
+const labelMetrics = (() => {
+  const ctx = document.createElement('canvas').getContext('2d');
+  return (labels) => {
+    ctx.font = `500 100px ${LABEL_FONT}`;
+    return { widths: labels.map((t) => ctx.measureText(t).width / 100), ascent: ctx.measureText('0123456789').actualBoundingBoxAscent / 100 };
+  };
+})();
+function labelPlan(face, labels, metrics, font) {
+  const dotR = LABEL.dotRadius * font;
+  const gap = LABEL.dotGap * font;
+  const height = 2 * dotR + gap + metrics.ascent * font;
+  const dotY = LABEL.centre * face.L - height / 2 + dotR;
+  const baseY = dotY + dotR + gap;
+  const rDot = face.r0 + (face.r1 - face.r0) * (dotY / face.L);
+  const reach = rDot / face.r0;
+  const items = [];
+  labels.forEach((text, i) => {
+    const d = wrapAngle(labelAngle(i) - face.phi);
+    if (Math.abs(d) > 1.4) return;
+    const x = rDot * Math.tan(d);
+    const half = (metrics.widths[i] * font) / 2;
+    if (x < face.xa * reach - half || x > face.xb * reach + half) return;
+    items.push({ text, x, w: metrics.widths[i] });
+  });
+  items.sort((a, b) => a.x - b.x);
+  return { font, dotR, gap, dotY, baseY, rDot, items };
+}
+function ringLabelFont(faces, labels, metrics) {
+  let font = Math.min(...faces.map((f) => LABEL.maxHeight * f.L));
+  for (let pass = 0; pass < 4; pass++) {
+    for (const f of faces) {
+      const { items } = labelPlan(f, labels, metrics, font);
+      for (let j = 1; j < items.length; j++) {
+        const need = (items[j - 1].w + items[j].w) / 2 + LABEL.minGap;
+        font = Math.min(font, (items[j].x - items[j - 1].x) / need);
+      }
+    }
+  }
+  return font;
+}
+function sideLabels(face, plan, W, L) {
   const pxW = 1024;
   const pxH = Math.round((pxW * L) / W);
+  const k = pxW / W;
   const canvas = document.createElement('canvas');
   canvas.width = pxW;
   canvas.height = pxH;
   const ctx = canvas.getContext('2d');
-  const toPx = (x, y) => [((x - face.xa) / W) * pxW, pxH * (1 - y / L)];
+  const toPx = (x, y) => [(x - face.xa) * k, pxH - y * k];
   const shrink = face.r1 / face.r0;
   ctx.beginPath();
   for (const [x, y] of [[face.xa, 0], [face.xb, 0], [face.xb * shrink, L], [face.xa * shrink, L]]) ctx.lineTo(...toPx(x, y));
   ctx.closePath();
   ctx.clip();
-  const dotLevel = 0.27, textLevel = 0.6;
-  const rDot = face.r0 + (face.r1 - face.r0) * dotLevel;
-  const reach = rDot / face.r0;
   ctx.fillStyle = GLYPH;
   ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  const fontPx = Math.min(pxH * 0.34, (0.32 * rDot * pxW) / W);
-  ctx.font = `500 ${Math.round(fontPx)}px Jost, Futura, "Avenir Next", sans-serif`;
-  labels.forEach((text, i) => {
-    const d = wrapAngle(labelAngle(i) - face.phi);
-    if (Math.abs(d) > 1.4) return;
-    const [px] = toPx(rDot * Math.tan(d), 0);
-    const half = ctx.measureText(text).width / 2;
-    const [lo] = toPx(face.xa * reach, 0), [hi] = toPx(face.xb * reach, 0);
-    if (px < lo - half || px > hi + half) return;
-    ctx.fillText(text, px, pxH * (1 - textLevel));
+  ctx.textBaseline = 'alphabetic';
+  ctx.font = `500 ${plan.font * k}px ${LABEL_FONT}`;
+  for (const item of plan.items) {
+    const [px, py] = toPx(item.x, plan.baseY);
+    ctx.fillText(item.text, px, py);
     ctx.beginPath();
-    ctx.arc(px, pxH * (1 - dotLevel), fontPx * 0.1, 0, Math.PI * 2);
+    ctx.arc(px, toPx(0, plan.dotY)[1], plan.dotR * k, 0, Math.PI * 2);
     ctx.fill();
-  });
+  }
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
@@ -702,6 +736,7 @@ function buildRing(spec, labels, chamfer) {
       xb: xs[1],
     };
   });
+  for (const f of faces) f.L = f.top.distanceTo(f.bottom);
 
   const ring = new THREE.Group();
   const solid = new THREE.Mesh(chamferedSolid(planes, chamfer), bodyMat);
@@ -710,7 +745,11 @@ function buildRing(spec, labels, chamfer) {
   ring.add(solid);
 
   if (labels) {
-    for (const f of faces) {
+    const metrics = labelMetrics(labels);
+    const font = ringLabelFont(faces, labels, metrics);
+    ring.userData.labelPlans = faces.map((f) => labelPlan(f, labels, metrics, font));
+    ring.userData.faces = faces;
+    for (const [k, f] of faces.entries()) {
       const W = f.xb - f.xa;
       const up = f.top.clone().sub(f.bottom);
       const L = up.length();
@@ -719,7 +758,7 @@ function buildRing(spec, labels, chamfer) {
       const decal = new THREE.Mesh(
         new THREE.PlaneGeometry(W, L),
         new THREE.MeshStandardMaterial({
-          map: sideLabels(spec, f, labels, W, L), transparent: true, depthWrite: false,
+          map: sideLabels(f, ring.userData.labelPlans[k], W, L), transparent: true, depthWrite: false,
           roughness: 0.6, emissive: 0xffffff, emissiveIntensity: 0.28,
           polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
         })
@@ -1295,11 +1334,12 @@ function ringTargets() {
     const unwind = (secondsPerTurn) => ALIGNED + (Math.PI / 3 + TWO_PI * Math.floor(set / secondsPerTurn)) * p;
     return { hour: unwind(3 * 3600), minute: unwind(180), cap: unwind(30) };
   }
+  if (T.mode === 'stopwatch' && !T.sw.running && stopwatchElapsed() === 0) return { hour: ALIGNED, minute: ALIGNED, cap: ALIGNED };
   const sec = T.mode === 'clock' ? mod(clockSeconds(), HALF_DAY) : mod(stopwatchElapsed(), HALF_DAY);
   return {
     hour: ringAngle(sec / 3600),
     minute: ringAngle((sec % 3600) / 300),
-    cap: -((sec % 60) / 60) * TWO_PI,
+    cap: (T.mode === 'stopwatch' ? ALIGNED : 0) - ((sec % 60) / 60) * TWO_PI,
   };
 }
 

@@ -95,7 +95,7 @@ Drag any selected clock and the whole selection comes with it: one tube runs fro
 
 ### Stopwatch
 
-Start, pause, resume and reset. The rings count up from 12:00 and the readout shows tenths of a second.
+Start, pause, resume and reset. At zero every clock is closed into its whole solid; on Start the rings turn to 12:00 and count up from there, and the readout shows tenths of a second.
 
 ### Timer
 
