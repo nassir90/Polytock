@@ -6,6 +6,12 @@ A clock you can pick up and throw. Polytock is a WebGL model of a black cube clo
 
 ![Polytock at ten past ten](docs/images/hero.jpg)
 
+## Films
+
+The website opens with five short promotional films, shown square above the exhibit. Each is also cut 9:16 for phones, alongside five longer technical films on how the clock was built. Every film is recorded straight from the app, frame by frame, at its native resolution. Titles, captions, code panels, wireframes and before-and-after splits are drawn over the live render. The narration is Gemini text to speech (`gemini-3.8-flash-lite-tts`, voice Laomedeia), and the captions match it word for word.
+
+All ten scripts, with what is on screen for each line, are in [docs/scripts.md](docs/scripts.md).
+
 ## Reading the time
 
 Look straight at the corner of the cube. A thin white line runs up the cut face from a dot on the front edge. That line is the pointer: the numeral on each ring that sits above it is the reading.
