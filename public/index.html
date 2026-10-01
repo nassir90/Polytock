@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="description" content="Polytock: a WebGL corner-cut cube clock with draggable rings, physics, a stopwatch and a timer.">
+<meta name="description" content="Polytock: a WebGL corner-cut cube clock with draggable rings, physics, polyhedral sibling clocks, a stopwatch and a timer.">
 <title>Polytock</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -176,7 +176,7 @@
 <header class="caption">
   <div>
     <h1>Polytock</h1>
-    <p id="hint">Drag a ring to set the time. Drag a body to pull it around. Drop more clocks from the left.</p>
+    <p id="hint">Drag a ring to set the time, or a body to pull it. Click or shift-click clocks to select them, then stand them up or drag them together.</p>
   </div>
   <div class="readout-wrap">
     <div class="readout-label" id="readout-label">Clock</div>
@@ -186,17 +186,17 @@
 
 <nav class="shelf" aria-label="Drop another clock">
   <div class="shelf-label">Drop</div>
-  <button class="shape-btn" data-shape="pyramid" aria-label="Pyramid clock" title="Pyramid clock">
-    <svg viewBox="0 0 24 24"><path d="M12 3.5 L20.5 19.5 H3.5 Z"/></svg>
+  <button class="shape-btn" data-shape="tetrahedron" aria-label="Tetrahedron clock" title="Tetrahedron clock">
+    <svg viewBox="0 0 24 24"><path d="M12 3 L21 19.5 H3 Z M12 3 L12 14 M3 19.5 L12 14 L21 19.5"/></svg>
   </button>
-  <button class="shape-btn" data-shape="square" aria-label="Cube clock" title="Cube clock">
-    <svg viewBox="0 0 24 24"><rect x="4.5" y="4.5" width="15" height="15"/></svg>
+  <button class="shape-btn" data-shape="cube" aria-label="Cube clock" title="Cube clock">
+    <svg viewBox="0 0 24 24"><path d="M12 2.8 L20.2 7.4 V16.6 L12 21.2 L3.8 16.6 V7.4 Z M3.8 7.4 L12 12 L20.2 7.4 M12 12 V21.2"/></svg>
   </button>
-  <button class="shape-btn" data-shape="pentagon" aria-label="Pentagonal clock" title="Pentagonal clock">
-    <svg viewBox="0 0 24 24"><path d="M12 3.5 L20.6 9.7 L17.3 19.8 H6.7 L3.4 9.7 Z"/></svg>
+  <button class="shape-btn" data-shape="dodecahedron" aria-label="Dodecahedron clock" title="Dodecahedron clock">
+    <svg viewBox="0 0 24 24"><path d="M12 2.6 L21 9.1 L17.6 19.7 H6.4 L3 9.1 Z M12 7.4 L16.4 10.6 L14.7 15.7 H9.3 L7.6 10.6 Z M12 2.6 V7.4 M21 9.1 L16.4 10.6 M17.6 19.7 L14.7 15.7 M6.4 19.7 L9.3 15.7 M3 9.1 L7.6 10.6"/></svg>
   </button>
-  <button class="shape-btn" data-shape="hexagon" aria-label="Hexagonal clock" title="Hexagonal clock">
-    <svg viewBox="0 0 24 24"><path d="M12 3 L19.8 7.5 V16.5 L12 21 L4.2 16.5 V7.5 Z"/></svg>
+  <button class="shape-btn" data-shape="truncatedOctahedron" aria-label="Truncated octahedron clock" title="Truncated octahedron clock">
+    <svg viewBox="0 0 24 24"><path d="M8 3 H16 L21 8 V16 L16 21 H8 L3 16 V8 Z M9 9 H15 V15 H9 Z M8 3 L9 9 M16 3 L15 9 M21 16 L15 15 M3 16 L9 15"/></svg>
   </button>
   <button class="shape-btn text" id="clear-shapes">Clear</button>
 </nav>
@@ -256,8 +256,8 @@ const token = (n) => css.getPropertyValue(n).trim();
 
 const P = {
   cutFraction: 0.48,
-  bodyChamfer: 0.06,
-  ringChamfer: 0.022,
+  bodyChamfer: 0.05,
+  ringChamfer: 0.02,
   hour:   { s0: 0.02, r0: 0.80, s1: 0.42, r1: 0.46 },
   minute: { s0: 0.43, r0: 0.58, s1: 0.82, r1: 0.25 },
   cap:    { s0: 0.83, r0: 0.33, s1: 1.26, r1: 0.0 },
@@ -488,6 +488,7 @@ function buildRing(spec, labels, chamfer) {
       decal.matrixAutoUpdate = false;
       decal.matrix.makeBasis(t, up, f.normal).setPosition(centre);
       decal.raycast = () => {};
+      decal.userData.decal = true;
       ring.add(decal);
     }
   }
@@ -539,7 +540,10 @@ const clockRoot = new THREE.Group();
 scene.add(clockRoot);
 const clocks = [];
 
-function makeClock({ planes, hint, chamfer, mass }) {
+const OUTLINE_LAYER = 1;
+const selection = new Set();
+
+function makeClock({ planes, hint, mass }) {
   const corners = cornersOf(planes);
   const aim = hint.clone().normalize();
   let apex = null, best = -Infinity;
@@ -552,7 +556,7 @@ function makeClock({ planes, hint, chamfer, mass }) {
   const axis = vertex.clone().normalize();
   const reach = vertex.dot(axis);
   const nearest = Math.max(...corners.filter((c) => c !== apex).map((c) => c.p.dot(axis)));
-  const depth = Math.max(P.cutFraction * reach, nearest + 0.15 * (reach - nearest));
+  const depth = Math.max(P.cutFraction * reach, nearest + 0.04 * (reach - nearest));
   const origin = axis.clone().multiplyScalar(depth);
 
   const [pa, pb, pc] = apex.on.map((i) => planes[i]);
@@ -574,7 +578,7 @@ function makeClock({ planes, hint, chamfer, mass }) {
 
   const solidPlanes = planes.concat([planeThrough(axis, origin)]);
   const rig = new THREE.Group();
-  const bodyMesh = new THREE.Mesh(chamferedSolid(solidPlanes, chamfer), bodyMat);
+  const bodyMesh = new THREE.Mesh(chamferedSolid(solidPlanes, P.bodyChamfer), bodyMat);
   bodyMesh.castShadow = true;
   bodyMesh.receiveShadow = true;
   bodyMesh.userData.part = 'body';
@@ -583,12 +587,12 @@ function makeClock({ planes, hint, chamfer, mass }) {
   const pointer = new THREE.Group();
   const inset = origin.clone().sub(tip).normalize();
   const lift = axis.clone().multiplyScalar(0.004);
-  const a = tip.clone().addScaledVector(inset, 0.09 * scale).add(lift);
+  const a = tip.clone().addScaledVector(inset, Math.max(0.09 * scale, 0.05)).add(lift);
   const b = tip.clone().lerp(origin, 0.75).add(lift);
-  const line = new THREE.Mesh(new THREE.CylinderGeometry(0.008 * Math.max(scale, 0.7), 0.008 * Math.max(scale, 0.7), a.distanceTo(b), 8), glyphMat);
+  const line = new THREE.Mesh(new THREE.CylinderGeometry(0.007, 0.007, a.distanceTo(b), 8), glyphMat);
   line.position.copy(a).lerp(b, 0.5);
   line.quaternion.setFromUnitVectors(UP, b.clone().sub(a).normalize());
-  const dot = new THREE.Mesh(new THREE.SphereGeometry(0.022 * Math.max(scale, 0.7), 16, 12), glyphMat);
+  const dot = new THREE.Mesh(new THREE.SphereGeometry(0.018, 16, 12), glyphMat);
   dot.position.copy(a);
   pointer.add(line, dot);
   pointer.userData.part = 'body';
@@ -598,11 +602,10 @@ function makeClock({ planes, hint, chamfer, mass }) {
   axisGroup.matrixAutoUpdate = false;
   axisGroup.matrix.copy(frame);
   rig.add(axisGroup);
-  const ringChamfer = P.ringChamfer * Math.max(scale, 0.6);
   const rings = {
-    hour: buildRing(scaled(P.hour, scale), HOURS, ringChamfer),
-    minute: buildRing(scaled(P.minute, scale), MINUTES, ringChamfer),
-    cap: buildRing(scaled(P.cap, scale), null, ringChamfer),
+    hour: buildRing(scaled(P.hour, scale), HOURS, P.ringChamfer),
+    minute: buildRing(scaled(P.minute, scale), MINUTES, P.ringChamfer),
+    cap: buildRing(scaled(P.cap, scale), null, P.ringChamfer),
   };
   for (const [name, ring] of Object.entries(rings)) {
     ring.userData.part = name;
@@ -624,7 +627,7 @@ function makeClock({ planes, hint, chamfer, mass }) {
   body.sleepSpeedLimit = 0.05;
   world.addBody(body);
 
-  const clock = { rig, axisGroup, rings, body, scale };
+  const clock = { rig, axisGroup, rings, body, scale, faces: planes, axis, anim: null };
   rig.userData.clock = clock;
   clockRoot.add(rig);
   clocks.push(clock);
@@ -632,7 +635,8 @@ function makeClock({ planes, hint, chamfer, mass }) {
 }
 
 function disposeClock(clock) {
-  if (pull.body === clock.body) release();
+  if (pulls.some((p) => p.body === clock.body)) releaseAll();
+  selection.delete(clock);
   world.removeBody(clock.body);
   clockRoot.remove(clock.rig);
   clock.rig.traverse((o) => {
@@ -643,45 +647,41 @@ function disposeClock(clock) {
     }
   });
   clocks.splice(clocks.indexOf(clock), 1);
+  refreshSelection();
 }
 
 function cubePlanes(half, turn) {
   return [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]
     .map((a) => plane(new THREE.Vector3(...a).applyAxisAngle(UP, turn), half));
 }
-function prismPlanes(sides, apothem, height) {
-  const planes = [plane(UP, height / 2), plane(UP.clone().negate(), height / 2)];
-  for (let i = 0; i < sides; i++) {
-    const a = (i / sides) * TWO_PI;
-    planes.push(plane(new THREE.Vector3(Math.cos(a), 0, Math.sin(a)), apothem));
-  }
+const GOLDEN = (1 + Math.sqrt(5)) / 2;
+function dodecahedronPlanes(inradius) {
+  const normals = [];
+  for (const a of [-1, 1]) for (const b of [-1, 1]) normals.push([0, a, b * GOLDEN], [a, b * GOLDEN, 0], [a * GOLDEN, 0, b]);
+  return normals.map((n) => plane(new THREE.Vector3(...n), inradius));
+}
+function truncatedOctahedronPlanes(s) {
+  const planes = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]
+    .map((n) => plane(new THREE.Vector3(...n), 2 * s));
+  for (const a of [-1, 1]) for (const b of [-1, 1]) for (const c of [-1, 1]) planes.push(plane(new THREE.Vector3(a, b, c), SQ3 * s));
   return planes;
 }
 const SHAPES = {
-  pyramid: () => [[1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1]].map((n) => plane(new THREE.Vector3(...n), 0.48)),
-  square: () => cubePlanes(0.72, 0),
-  pentagon: () => prismPlanes(5, 0.78, 1.0),
-  hexagon: () => prismPlanes(6, 0.8, 0.95),
+  tetrahedron: () => [[1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1]].map((n) => plane(new THREE.Vector3(...n), 0.56)),
+  cube: () => cubePlanes(0.78, 0),
+  dodecahedron: () => dodecahedronPlanes(1.02),
+  truncatedOctahedron: () => truncatedOctahedronPlanes(0.6),
 };
 const MAX_EXTRA = 12;
 
 let mainClock = null;
 
-function standUp() {
-  const b = mainClock.body;
-  b.position.set(0, 0.15, 0);
-  b.quaternion.set(0, 0, 0, 1);
-  b.velocity.setZero();
-  b.angularVelocity.setZero();
-  b.wakeUp();
-}
-
 function spawnClock(kind) {
   const extras = clocks.filter((c) => c !== mainClock);
   if (extras.length >= MAX_EXTRA) disposeClock(extras[0]);
-  const clock = makeClock({ planes: SHAPES[kind](), hint: new THREE.Vector3(0.3, 1, 0.45), chamfer: 0.045, mass: 1.6 });
-  const a = Math.random() * TWO_PI, d = 2.6 + Math.random() * 1.6;
-  const lim = FENCE - 1.2;
+  const clock = makeClock({ planes: SHAPES[kind](), hint: new THREE.Vector3(0.3, 1, 0.45), mass: 1.8 });
+  const a = Math.random() * TWO_PI, d = 2.8 + Math.random() * 1.6;
+  const lim = FENCE - 1.4;
   const from = mainClock.body.position;
   clock.body.position.set(
     THREE.MathUtils.clamp(from.x + Math.cos(a) * d, -lim, lim),
@@ -693,6 +693,82 @@ function spawnClock(kind) {
   clock.rig.quaternion.copy(clock.body.quaternion);
 }
 
+function refreshSelection() {
+  for (const c of clocks) {
+    const on = selection.has(c);
+    c.rig.traverse((o) => {
+      if (!o.isMesh || o.userData.decal) return;
+      if (on) o.layers.enable(OUTLINE_LAYER); else o.layers.disable(OUTLINE_LAYER);
+    });
+  }
+  $('upright').textContent = selection.size > 1 ? `Stand up (${selection.size})` : 'Stand up';
+}
+
+const RISE = 1.3;
+const ANIM_SECONDS = 1.8;
+const smooth = (t) => t * t * (3 - 2 * t);
+
+function restPose(clock) {
+  const current = new THREE.Quaternion(clock.body.quaternion.x, clock.body.quaternion.y, clock.body.quaternion.z, clock.body.quaternion.w);
+  let base = null, score = Infinity;
+  for (const f of clock.faces) {
+    const s = f.n.dot(clock.axis) + 0.01 * f.n.clone().applyQuaternion(current).y;
+    if (s < score) { score = s; base = f; }
+  }
+  const level = new THREE.Quaternion().setFromUnitVectors(base.n, new THREE.Vector3(0, -1, 0));
+  const heading = clock.axis.clone().applyQuaternion(level);
+  heading.y = 0;
+  let turned = level;
+  if (heading.lengthSq() > 1e-4) {
+    const toCam = camera.position.clone().sub(clock.body.position);
+    const yaw = Math.atan2(toCam.x, toCam.z) - Math.atan2(heading.x, heading.z);
+    turned = new THREE.Quaternion().setFromAxisAngle(UP, yaw).multiply(level);
+  }
+  return { q: turned, y: -1 + base.d + 0.002 };
+}
+
+function standUp(list) {
+  list.forEach((c, i) => {
+    if (pulls.some((p) => p.body === c.body)) releaseAll();
+    const pose = restPose(c);
+    const p0 = new THREE.Vector3(c.body.position.x, c.body.position.y, c.body.position.z);
+    const q0 = new THREE.Quaternion(c.body.quaternion.x, c.body.quaternion.y, c.body.quaternion.z, c.body.quaternion.w);
+    c.anim = { t: -i * 0.09, p0, q0, q1: pose.q, yRest: pose.y, yHover: Math.max(p0.y, pose.y) + RISE };
+    c.body.type = CANNON.Body.KINEMATIC;
+    c.body.velocity.setZero();
+    c.body.angularVelocity.setZero();
+    c.body.wakeUp();
+  });
+}
+
+const _q = new THREE.Quaternion();
+function stepAnimations(dt) {
+  for (const c of clocks) {
+    const a = c.anim;
+    if (!a) continue;
+    a.t += dt;
+    if (a.t < 0) continue;
+    const t = Math.min(a.t / ANIM_SECONDS, 1);
+    const up = smooth(THREE.MathUtils.clamp(t / 0.33, 0, 1));
+    const down = smooth(THREE.MathUtils.clamp((t - 0.67) / 0.33, 0, 1));
+    const turn = smooth(THREE.MathUtils.clamp((t - 0.18) / 0.6, 0, 1));
+    const y = THREE.MathUtils.lerp(THREE.MathUtils.lerp(a.p0.y, a.yHover, up), a.yRest, down);
+    const b = c.body;
+    const vy = (y - b.position.y) / Math.max(dt, 1e-3);
+    b.position.set(a.p0.x, y, a.p0.z);
+    b.velocity.set(0, vy, 0);
+    _q.slerpQuaternions(a.q0, a.q1, turn);
+    b.quaternion.set(_q.x, _q.y, _q.z, _q.w);
+    if (t >= 1) {
+      b.type = CANNON.Body.DYNAMIC;
+      b.velocity.setZero();
+      b.angularVelocity.setZero();
+      b.wakeUp();
+      c.anim = null;
+    }
+  }
+}
+
 const PULL = {
   maxStretch: 3.0,
   maxForce: 150,
@@ -701,12 +777,15 @@ const PULL = {
   radius: 0.055,
   maxPinch: 0.88,
 };
-const pull = { active: false, body: null, local: new CANNON.Vec3(), target: new THREE.Vector3(), plane: new THREE.Plane(), tension: 0 };
+const STRING_GREY = '#6b6e74';
+const pulls = [];
+const pullTarget = new THREE.Vector3();
+const pullPlane = new THREE.Plane();
 
 const beamMat = new THREE.ShaderMaterial({
   uniforms: {
     uLen: { value: 1 }, uRadius: { value: PULL.radius }, uPinch: { value: 0 },
-    uCalm: { value: new THREE.Color('#6b6e74') }, uTaut: { value: new THREE.Color('#3a3c41') },
+    uCalm: { value: new THREE.Color(STRING_GREY) }, uTaut: { value: new THREE.Color('#3a3c41') },
   },
   vertexShader: `
     uniform float uLen, uRadius, uPinch;
@@ -734,52 +813,137 @@ const beamMat = new THREE.ShaderMaterial({
     }`,
   transparent: true, depthWrite: false, side: THREE.DoubleSide,
 });
-const beam = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 28, 48, true), beamMat);
-beam.frustumCulled = false;
-beam.renderOrder = 2;
-const ball = new THREE.Mesh(
-  new THREE.SphereGeometry(0.075, 24, 16),
-  new THREE.MeshStandardMaterial({ color: GLYPH, roughness: 0.3, emissive: GLYPH, emissiveIntensity: 0.25 })
-);
-beam.visible = ball.visible = false;
-scene.add(beam, ball);
+const beamGeo = new THREE.CylinderGeometry(1, 1, 1, 28, 48, true);
+const ballGeo = new THREE.SphereGeometry(0.075, 24, 16);
+const ballMat = new THREE.MeshStandardMaterial({ color: STRING_GREY, roughness: 0.38, metalness: 0.1 });
+
+function startPull(hitClock, hitPoint) {
+  const group = selection.has(hitClock) && selection.size > 1 ? [...selection] : [hitClock];
+  pullPlane.setFromNormalAndCoplanarPoint(camera.getWorldDirection(new THREE.Vector3()), hitPoint);
+  pullTarget.copy(hitPoint);
+  for (const c of group) {
+    if (c.anim) continue;
+    const anchor = c === hitClock ? hitPoint.clone() : c.rig.position.clone();
+    const local = new CANNON.Vec3();
+    c.body.pointToLocalFrame(new CANNON.Vec3(anchor.x, anchor.y, anchor.z), local);
+    const beam = new THREE.Mesh(beamGeo, beamMat.clone());
+    beam.frustumCulled = false;
+    beam.renderOrder = 2;
+    const ball = new THREE.Mesh(ballGeo, ballMat);
+    ball.scale.setScalar(c === hitClock ? 1 : 0.7);
+    scene.add(beam, ball);
+    pulls.push({ body: c.body, local, offset: anchor.sub(hitPoint), beam, ball });
+  }
+  return pulls.length > 0;
+}
+
+function releaseAll() {
+  for (const p of pulls) {
+    scene.remove(p.beam, p.ball);
+    p.beam.material.dispose();
+  }
+  pulls.length = 0;
+}
 
 const anchorWorld = new CANNON.Vec3();
 world.addEventListener('preStep', () => {
-  if (!pull.active) return;
-  const body = pull.body;
-  body.pointToWorldFrame(pull.local, anchorWorld);
-  const dx = pull.target.x - anchorWorld.x, dy = pull.target.y - anchorWorld.y, dz = pull.target.z - anchorWorld.z;
-  const len = Math.hypot(dx, dy, dz);
-  if (len > PULL.maxStretch * PULL.breakAt) { release(); return; }
-  pull.tension = Math.min(len / PULL.maxStretch, 1);
-  const k = len > 1e-6 ? (PULL.maxForce * pull.tension) / len : 0;
-  const r = anchorWorld.vsub(body.position);
-  const v = body.velocity.vadd(body.angularVelocity.cross(r));
-  const f = new CANNON.Vec3(dx * k - v.x * PULL.damping, dy * k - v.y * PULL.damping, dz * k - v.z * PULL.damping);
-  body.applyForce(f, r);
-  body.wakeUp();
+  let snapped = false;
+  for (const p of pulls) {
+    const body = p.body;
+    body.pointToWorldFrame(p.local, anchorWorld);
+    const tx = pullTarget.x + p.offset.x, ty = pullTarget.y + p.offset.y, tz = pullTarget.z + p.offset.z;
+    const dx = tx - anchorWorld.x, dy = ty - anchorWorld.y, dz = tz - anchorWorld.z;
+    const len = Math.hypot(dx, dy, dz);
+    if (len > PULL.maxStretch * PULL.breakAt) { snapped = true; break; }
+    const tension = Math.min(len / PULL.maxStretch, 1);
+    const k = len > 1e-6 ? (PULL.maxForce * tension) / len : 0;
+    const r = anchorWorld.vsub(body.position);
+    const v = body.velocity.vadd(body.angularVelocity.cross(r));
+    const f = new CANNON.Vec3(dx * k - v.x * PULL.damping, dy * k - v.y * PULL.damping, dz * k - v.z * PULL.damping);
+    body.applyForce(f, r);
+    body.wakeUp();
+  }
+  if (snapped) releaseAll();
 });
 
-const _a = new THREE.Vector3(), _d = new THREE.Vector3();
-function updateBeam() {
-  if (!pull.active) return;
-  pull.body.pointToWorldFrame(pull.local, anchorWorld);
-  _a.set(anchorWorld.x, anchorWorld.y, anchorWorld.z);
-  _d.subVectors(pull.target, _a);
-  const len = _d.length();
-  beam.position.copy(_a);
-  if (len > 1e-4) beam.quaternion.setFromUnitVectors(UP, _d.normalize());
-  beamMat.uniforms.uLen.value = len;
-  beamMat.uniforms.uPinch.value = PULL.maxPinch * Math.min(len / PULL.maxStretch, 1);
-  ball.position.copy(pull.target);
+const _a = new THREE.Vector3(), _d = new THREE.Vector3(), _t = new THREE.Vector3();
+function updateBeams() {
+  for (const p of pulls) {
+    p.body.pointToWorldFrame(p.local, anchorWorld);
+    _a.set(anchorWorld.x, anchorWorld.y, anchorWorld.z);
+    _t.copy(pullTarget).add(p.offset);
+    _d.subVectors(_t, _a);
+    const len = _d.length();
+    p.beam.position.copy(_a);
+    if (len > 1e-4) p.beam.quaternion.setFromUnitVectors(UP, _d.normalize());
+    p.beam.material.uniforms.uLen.value = len;
+    p.beam.material.uniforms.uPinch.value = PULL.maxPinch * Math.min(len / PULL.maxStretch, 1);
+    p.ball.position.copy(_t);
+  }
 }
 
-function release() {
-  pull.active = false;
-  pull.body = null;
-  beam.visible = ball.visible = false;
-  pull.tension = 0;
+const maskTarget = new THREE.WebGLRenderTarget(1, 1);
+const maskMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+const outlineMat = new THREE.ShaderMaterial({
+  uniforms: {
+    tMask: { value: maskTarget.texture },
+    uTexel: { value: new THREE.Vector2(1, 1) },
+    uColor: { value: new THREE.Color('#7c7f86') },
+    uAlpha: { value: 0.6 },
+  },
+  vertexShader: `
+    varying vec2 vUv;
+    void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+  fragmentShader: `
+    uniform sampler2D tMask; uniform vec2 uTexel; uniform vec3 uColor; uniform float uAlpha;
+    varying vec2 vUv;
+    void main() {
+      float inside = texture2D(tMask, vUv).r;
+      float near = 0.0;
+      for (int i = 0; i < 20; i++) {
+        float a = 6.2831853 * float(i) / 20.0;
+        vec2 d = vec2(cos(a), sin(a)) * uTexel;
+        near = max(near, texture2D(tMask, vUv + d * 3.0).r);
+        near = max(near, texture2D(tMask, vUv + d * 6.0).r * 0.8);
+        near = max(near, texture2D(tMask, vUv + d * 10.0).r * 0.45);
+      }
+      float edge = max(near - inside, 0.0);
+      gl_FragColor = vec4(uColor, edge * uAlpha);
+    }`,
+  transparent: true, depthTest: false, depthWrite: false,
+});
+const outlineScene = new THREE.Scene();
+const outlineQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), outlineMat);
+outlineQuad.frustumCulled = false;
+outlineScene.add(outlineQuad);
+const outlineCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+const _clear = new THREE.Color();
+
+function renderOutline(time) {
+  if (!selection.size) return;
+  const background = scene.background, fog = scene.fog;
+  const clearAlpha = renderer.getClearAlpha();
+  renderer.getClearColor(_clear);
+  scene.background = null;
+  scene.fog = null;
+  scene.overrideMaterial = maskMat;
+  renderer.shadowMap.autoUpdate = false;
+  camera.layers.set(OUTLINE_LAYER);
+  renderer.setRenderTarget(maskTarget);
+  renderer.setClearColor(0x000000, 1);
+  renderer.clear();
+  renderer.render(scene, camera);
+  renderer.setRenderTarget(null);
+  camera.layers.set(0);
+  scene.overrideMaterial = null;
+  scene.background = background;
+  scene.fog = fog;
+  renderer.shadowMap.autoUpdate = true;
+  renderer.setClearColor(_clear, clearAlpha);
+  outlineMat.uniforms.uAlpha.value = 0.3 + 0.55 * (0.5 + 0.5 * Math.sin(time * TWO_PI / 1.4));
+  renderer.autoClear = false;
+  renderer.render(outlineScene, outlineCam);
+  renderer.autoClear = true;
 }
 
 const ringAngle = (v) => -THREE.MathUtils.degToRad(30 * v - 45);
@@ -900,7 +1064,7 @@ function chime() {
 
 const $ = (id) => document.getElementById(id);
 const HINTS = {
-  clock: 'Drag a ring to set the time. Drag a body to pull it around. Drop more clocks from the left.',
+  clock: 'Drag a ring to set the time, or a body to pull it. Click or shift-click clocks to select them, then stand them up or drag them together.',
   stopwatch: 'The rings count up: hours, minutes, and the cap sweeps the seconds.',
   timer: 'Pick a length or drag the rings to set it. The rings unwind until each body is whole again.',
 };
@@ -957,10 +1121,11 @@ $('tm-reset').addEventListener('click', () => {
   T.tm.remaining = T.tm.set;
 });
 
-$('upright').addEventListener('click', () => standUp());
+$('upright').addEventListener('click', () => standUp(selection.size ? [...selection] : [mainClock]));
 for (const b of document.querySelectorAll('[data-shape]')) b.addEventListener('click', () => spawnClock(b.dataset.shape));
 $('clear-shapes').addEventListener('click', () => {
   for (const c of clocks.filter((c) => c !== mainClock)) disposeClock(c);
+  refreshSelection();
 });
 const spinBtn = $('spin');
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -1010,28 +1175,45 @@ const SECONDS_PER_RADIAN = {
   cap: -60 / TWO_PI,
 };
 
+const CLICK_SLOP = 5;
 let drag = null;
+let emptyDown = null;
+
+function beginDrag(d) {
+  const { hit } = d;
+  if (hit.part === 'body') {
+    if (hit.clock.anim || !startPull(hit.clock, hit.point)) return null;
+    return { kind: 'pull', id: d.id };
+  }
+  const local = hit.clock.axisGroup.worldToLocal(hit.point.clone());
+  return { kind: 'ring', clock: hit.clock, part: hit.part, s: local.z, phi: Math.atan2(local.x, -local.y), id: d.id };
+}
+
+function clickSelect(clock, additive) {
+  if (additive) {
+    if (selection.has(clock)) selection.delete(clock); else selection.add(clock);
+  } else if (selection.size === 1 && selection.has(clock)) {
+    selection.clear();
+  } else {
+    selection.clear();
+    selection.add(clock);
+  }
+  refreshSelection();
+}
+
 stage.addEventListener('pointerdown', (e) => {
   if (e.button !== 0 || !mainClock) return;
   aimAt(e);
   const hit = pick();
-  if (!hit) return;
+  if (!hit) {
+    emptyDown = { x: e.clientX, y: e.clientY, shift: e.shiftKey };
+    return;
+  }
   e.stopPropagation();
   e.preventDefault();
   try { stage.setPointerCapture(e.pointerId); } catch (err) {}
   controls.autoRotate = false;
-  if (hit.part === 'body') {
-    pull.body = hit.clock.body;
-    pull.body.pointToLocalFrame(new CANNON.Vec3(hit.point.x, hit.point.y, hit.point.z), pull.local);
-    pull.plane.setFromNormalAndCoplanarPoint(camera.getWorldDirection(new THREE.Vector3()), hit.point);
-    pull.target.copy(hit.point);
-    pull.active = true;
-    beam.visible = ball.visible = true;
-    drag = { kind: 'pull', id: e.pointerId };
-  } else {
-    const local = hit.clock.axisGroup.worldToLocal(hit.point.clone());
-    drag = { kind: 'ring', clock: hit.clock, part: hit.part, s: local.z, phi: Math.atan2(local.x, -local.y), id: e.pointerId };
-  }
+  drag = { kind: 'pending', hit, x0: e.clientX, y0: e.clientY, shift: e.shiftKey, id: e.pointerId };
   stage.style.cursor = 'grabbing';
 }, { capture: true });
 
@@ -1041,10 +1223,16 @@ stage.addEventListener('pointermove', (e) => {
     stage.style.cursor = mainClock && pick() ? 'grab' : '';
     return;
   }
+  if (drag.kind === 'pending') {
+    if (Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) < CLICK_SLOP) return;
+    const started = beginDrag(drag);
+    if (!started) return;
+    drag = started;
+  }
   if (drag.kind === 'pull') {
-    if (!pull.active) return;
-    const p = raycaster.ray.intersectPlane(pull.plane, new THREE.Vector3());
-    if (p) { p.y = Math.max(p.y, -0.92); pull.target.copy(p); }
+    if (!pulls.length) return;
+    const p = raycaster.ray.intersectPlane(pullPlane, new THREE.Vector3());
+    if (p) { p.y = Math.max(p.y, -0.92); pullTarget.copy(p); }
   } else {
     if (!clocks.includes(drag.clock)) return;
     const phi = axisAngleAt(drag.clock, drag.s);
@@ -1057,8 +1245,14 @@ stage.addEventListener('pointermove', (e) => {
 });
 
 function endDrag(e) {
+  if (emptyDown) {
+    const still = Math.hypot(e.clientX - emptyDown.x, e.clientY - emptyDown.y) < CLICK_SLOP;
+    if (still && !emptyDown.shift && selection.size) { selection.clear(); refreshSelection(); }
+    emptyDown = null;
+  }
   if (!drag || e.pointerId !== drag.id) return;
-  if (drag.kind === 'pull') release();
+  if (drag.kind === 'pending' && clocks.includes(drag.hit.clock)) clickSelect(drag.hit.clock, drag.shift);
+  if (drag.kind === 'pull') releaseAll();
   if (drag.kind === 'ring') dragTwist[drag.part] = 0;
   drag = null;
   stage.style.cursor = '';
@@ -1070,7 +1264,7 @@ stage.addEventListener('pointercancel', endDrag);
 async function build() {
   try { await document.fonts.load('500 64px Jost'); } catch (e) {}
   const corner = new THREE.Vector3(1, 1, 1).applyAxisAngle(UP, CUBE_TURN);
-  mainClock = makeClock({ planes: cubePlanes(1, CUBE_TURN), hint: corner, chamfer: P.bodyChamfer, mass: 4 });
+  mainClock = makeClock({ planes: cubePlanes(1, CUBE_TURN), hint: corner, mass: 4 });
   document.getElementById('status').hidden = true;
 }
 
@@ -1080,6 +1274,9 @@ function resize() {
   camera.aspect = w / h;
   camera.fov = w / h < 0.8 ? 44 : 32;
   camera.updateProjectionMatrix();
+  const px = renderer.getDrawingBufferSize(new THREE.Vector2());
+  maskTarget.setSize(px.x, px.y);
+  outlineMat.uniforms.uTexel.value.set(1 / px.x, 1 / px.y);
 }
 window.addEventListener('resize', resize);
 resize();
@@ -1101,6 +1298,7 @@ build().then(() => {
       chime();
     }
 
+    stepAnimations(dt);
     world.step(1 / 60, dt, 5);
     for (const c of clocks) {
       c.rig.position.copy(c.body.position);
@@ -1111,13 +1309,14 @@ build().then(() => {
     applyRings(dt);
     updateReadout();
     syncButtons();
-    updateBeam();
+    updateBeams();
 
     const m = mainClock.rig.position;
     _focus.set(m.x, m.y + 0.25, m.z);
     controls.target.lerp(_focus, 0.05);
     controls.update();
     renderer.render(scene, camera);
+    renderOutline(now / 1000);
   });
 }).catch((err) => {
   document.getElementById('status').textContent = 'The 3D view could not start: ' + err.message;
