@@ -25,16 +25,9 @@
   [hidden] { display: none !important; }
 
   .site-head {
-    max-width: 1180px;
+    max-width: 1080px;
     margin: 0 auto;
-    padding: calc(env(safe-area-inset-top, 0px) + 56px) 24px 28px;
-  }
-  .site-kicker {
-    margin: 0 0 10px;
-    font: 500 13px var(--mono);
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: var(--ink-soft);
+    padding: calc(env(safe-area-inset-top, 0px) + 64px) 24px 24px;
   }
   .site-title {
     margin: 0;
@@ -49,6 +42,14 @@
     line-height: 1.55;
     color: var(--ink-soft);
   }
+  .site-credit {
+    margin: 12px 0 0;
+    max-width: 60ch;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--ink-soft);
+  }
+  .site-credit a { color: var(--ink); text-underline-offset: 3px; }
   .site-jump {
     display: inline-flex;
     margin-top: 22px;
@@ -61,49 +62,84 @@
     text-transform: uppercase;
     text-decoration: none;
   }
-  .site-jump:focus-visible, .reel-sound:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+  .site-jump:focus-visible, .reel-sound:focus-visible, .site-credit a:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
   .reels {
-    max-width: 1180px;
+    max-width: 1080px;
     margin: 0 auto;
-    padding: 12px 24px 56px;
+    padding: 40px 24px 72px;
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-    gap: 20px;
+    gap: clamp(48px, 8vw, 96px);
   }
-  .reel { margin: 0; display: grid; gap: 10px; min-width: 0; }
-  .reel-frame { position: relative; aspect-ratio: 1 / 1; max-width: 100%; border-radius: 14px; overflow: hidden; background: var(--ink); }
+  .reel {
+    margin: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+    gap: clamp(24px, 5vw, 64px);
+    align-items: center;
+  }
+  .reel:nth-child(even) { grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); }
+  .reel:nth-child(even) .reel-frame { order: 2; }
+  .reel-frame { position: relative; aspect-ratio: 1 / 1; border-radius: 16px; overflow: hidden; background: var(--ink); }
   .reel video { display: block; width: 100%; height: 100%; object-fit: cover; }
+  .reel-text { min-width: 0; }
+  .reel-num {
+    margin: 0 0 8px;
+    font: 500 12px var(--mono);
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+  }
+  .reel-title { margin: 0 0 16px; font: 500 clamp(28px, 3.4vw, 40px)/1.1 var(--display); }
+  .reel-lines { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+  .reel-lines li {
+    font-size: 17px;
+    line-height: 1.5;
+    color: var(--ink-soft);
+    opacity: 0.55;
+    transition: opacity 0.3s, color 0.3s;
+  }
+  .reel-lines li.on { opacity: 1; color: var(--ink); }
   .reel-sound {
-    position: absolute;
-    right: 10px;
-    bottom: 10px;
-    padding: 8px 12px;
-    border: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 22px;
+    padding: 9px 14px;
+    border: 1px solid rgba(28, 29, 32, 0.25);
     border-radius: 999px;
-    background: rgba(28, 29, 32, 0.78);
-    color: var(--glyph);
+    background: transparent;
+    color: var(--ink);
     font: 500 12px var(--display);
     letter-spacing: 0.08em;
     text-transform: uppercase;
     cursor: pointer;
   }
-  .reel figcaption { font: 500 15px var(--display); letter-spacing: 0.02em; }
-  .exhibit-label {
-    max-width: 1180px;
-    margin: 0 auto;
-    padding: 0 24px 14px;
-    font: 500 13px var(--mono);
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: var(--ink-soft);
+  .reel-sound svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .reel-sound[aria-pressed="true"] { background: var(--ink); color: var(--glyph); border-color: var(--ink); }
+  .reel-sound .wave { display: none; }
+  .reel-sound[aria-pressed="true"] .wave { display: inline; }
+  .reel-sound[aria-pressed="true"] .mute { display: none; }
+  @media (max-width: 720px) {
+    .reel, .reel:nth-child(even) { grid-template-columns: 1fr; gap: 18px; }
+    .reel:nth-child(even) .reel-frame { order: 0; }
   }
   .exhibit {
     position: relative;
     height: 100svh;
     min-height: 560px;
     overflow: hidden;
-    border-top: 1px solid rgba(28, 29, 32, 0.12);
   }
+  .exhibit::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto;
+    height: 160px;
+    background: linear-gradient(to bottom, var(--ground) 0%, rgba(217, 212, 203, 0.85) 30%, rgba(217, 212, 203, 0) 100%);
+    pointer-events: none;
+    z-index: 1;
+  }
+  .exhibit .caption { top: 132px; z-index: 2; }
+  .exhibit .shelf, .exhibit .bar, .exhibit .status { z-index: 2; }
   body {
     margin: 0;
     background: var(--ground);
@@ -124,15 +160,8 @@
     gap: 16px;
     pointer-events: none;
   }
-  .caption h1 {
-    margin: 0;
-    font-weight: 500;
-    font-size: 15px;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-  }
   .caption p {
-    margin: 4px 0 0;
+    margin: 0;
     font-size: 13px;
     color: var(--ink-soft);
     max-width: 34ch;
@@ -252,58 +281,101 @@
 </head>
 <body>
 <header class="site-head">
-  <p class="site-kicker">Exhibit · Interactive clock</p>
   <h1 class="site-title">Polytock</h1>
   <p class="site-lede">A black cube clock with one corner cut away. Three triangular rings tell the time; you can turn them, throw the whole thing, drop in more clocks and take them outside. Watch the five short films, then play with it below.</p>
+  <p class="site-credit">Based on a clock shown in <a href="https://www.instagram.com/reel/Dd2_EWny62a/" rel="noopener">a reel</a> posted by <a href="https://www.instagram.com/sushi_watches/" rel="noopener">@sushi_watches</a> on Instagram.</p>
   <a class="site-jump" href="#exhibit">Play with it</a>
 </header>
 
 <section class="reels" aria-label="Short films">
-  <figure class="reel">
+  <article class="reel">
     <div class="reel-frame">
       <video src="videos/promo-1-throw.mp4" poster="videos/promo-1-throw.jpg" muted loop playsinline preload="metadata" aria-label="A clock you can throw"></video>
-      <button class="reel-sound" type="button" aria-pressed="false">Sound on</button>
     </div>
-    <figcaption>A clock you can throw</figcaption>
-  </figure>
-  <figure class="reel">
+    <div class="reel-text">
+      <p class="reel-num">Film 1 of 5</p>
+      <h2 class="reel-title">A clock you can throw</h2>
+      <ul class="reel-lines">
+        <li data-start="0.50" data-end="5.09">This is Polytock. A clock you can pick up and throw.</li>
+        <li data-start="5.09" data-end="9.68">Grab it, and a stretchy string drags it wherever you want.</li>
+        <li data-start="9.68" data-end="13.43">Pull too hard, and the string snaps.</li>
+        <li data-start="13.43" data-end="16.74">One tap, and it stands right back up.</li>
+      </ul>
+      <button class="reel-sound" type="button" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path class="mute" d="M16 9.5l5 5M21 9.5l-5 5"/><path class="wave" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></svg><span>Sound off</span></button>
+    </div>
+  </article>
+  <article class="reel">
     <div class="reel-frame">
       <video src="videos/promo-2-spin.mp4" poster="videos/promo-2-spin.jpg" muted loop playsinline preload="metadata" aria-label="Spin the hands"></video>
-      <button class="reel-sound" type="button" aria-pressed="false">Sound on</button>
     </div>
-    <figcaption>Spin the hands</figcaption>
-  </figure>
-  <figure class="reel">
+    <div class="reel-text">
+      <p class="reel-num">Film 2 of 5</p>
+      <h2 class="reel-title">Spin the hands</h2>
+      <ul class="reel-lines">
+        <li data-start="0.50" data-end="5.61">Three rings tell the time: hours, minutes and seconds.</li>
+        <li data-start="5.61" data-end="9.72">Read the numbers sitting right above the white line.</li>
+        <li data-start="9.72" data-end="13.03">Drag a ring, and the time moves with it.</li>
+        <li data-start="13.03" data-end="17.90">Fling it, and it keeps spinning, then eases back to now.</li>
+      </ul>
+      <button class="reel-sound" type="button" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path class="mute" d="M16 9.5l5 5M21 9.5l-5 5"/><path class="wave" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></svg><span>Sound off</span></button>
+    </div>
+  </article>
+  <article class="reel">
     <div class="reel-frame">
       <video src="videos/promo-3-family.mp4" poster="videos/promo-3-family.jpg" muted loop playsinline preload="metadata" aria-label="The clock family"></video>
-      <button class="reel-sound" type="button" aria-pressed="false">Sound on</button>
     </div>
-    <figcaption>The clock family</figcaption>
-  </figure>
-  <figure class="reel">
+    <div class="reel-text">
+      <p class="reel-num">Film 3 of 5</p>
+      <h2 class="reel-title">The clock family</h2>
+      <ul class="reel-lines">
+        <li data-start="0.50" data-end="3.21">Polytock isn't only a cube.</li>
+        <li data-start="3.21" data-end="11.44">Drop in a tetrahedron, a cube, a dodecahedron or a truncated octahedron. Every one keeps time.</li>
+        <li data-start="11.44" data-end="15.39">Click a few to select them, and stand them up together.</li>
+        <li data-start="15.39" data-end="18.02">Or drag the whole group at once.</li>
+      </ul>
+      <button class="reel-sound" type="button" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path class="mute" d="M16 9.5l5 5M21 9.5l-5 5"/><path class="wave" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></svg><span>Sound off</span></button>
+    </div>
+  </article>
+  <article class="reel">
     <div class="reel-frame">
       <video src="videos/promo-4-daynight.mp4" poster="videos/promo-4-daynight.jpg" muted loop playsinline preload="metadata" aria-label="Day to night"></video>
-      <button class="reel-sound" type="button" aria-pressed="false">Sound on</button>
     </div>
-    <figcaption>Day to night</figcaption>
-  </figure>
-  <figure class="reel">
+    <div class="reel-text">
+      <p class="reel-num">Film 4 of 5</p>
+      <h2 class="reel-title">Day to night</h2>
+      <ul class="reel-lines">
+        <li data-start="0.50" data-end="2.73">Take the clocks outside.</li>
+        <li data-start="2.73" data-end="9.28">The sun follows the time on the clock. Spin the hands, and watch the whole day go by.</li>
+        <li data-start="9.28" data-end="13.31">Sunset, then stars, then moonlight.</li>
+        <li data-start="13.31" data-end="16.30">And at night, the numbers glow.</li>
+      </ul>
+      <button class="reel-sound" type="button" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path class="mute" d="M16 9.5l5 5M21 9.5l-5 5"/><path class="wave" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></svg><span>Sound off</span></button>
+    </div>
+  </article>
+  <article class="reel">
     <div class="reel-frame">
       <video src="videos/promo-5-timer.mp4" poster="videos/promo-5-timer.jpg" muted loop playsinline preload="metadata" aria-label="Timer and stopwatch"></video>
-      <button class="reel-sound" type="button" aria-pressed="false">Sound on</button>
     </div>
-    <figcaption>Timer and stopwatch</figcaption>
-  </figure>
+    <div class="reel-text">
+      <p class="reel-num">Film 5 of 5</p>
+      <h2 class="reel-title">Timer and stopwatch</h2>
+      <ul class="reel-lines">
+        <li data-start="0.50" data-end="3.09">Polytock is a stopwatch, too.</li>
+        <li data-start="3.09" data-end="6.80">And a timer that winds the rings up into a star.</li>
+        <li data-start="6.80" data-end="10.03">As it counts down, the rings unwind.</li>
+        <li data-start="10.03" data-end="13.30">At zero, the cube is whole again.</li>
+      </ul>
+      <button class="reel-sound" type="button" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path class="mute" d="M16 9.5l5 5M21 9.5l-5 5"/><path class="wave" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></svg><span>Sound off</span></button>
+    </div>
+  </article>
 </section>
 
-<p class="exhibit-label">The exhibit</p>
-<section class="exhibit" id="exhibit">
+<section class="exhibit" id="exhibit" aria-label="Polytock, interactive">
 <div id="stage"></div>
 <div class="status" id="status">Machining the cube</div>
 
 <header class="caption">
   <div>
-    <h1>Polytock</h1>
     <p id="hint">Drag a ring to set the time, or a body to pull it. Click or shift-click clocks to select them, then stand them up or drag them together.</p>
   </div>
   <div class="readout-wrap">
@@ -1975,29 +2047,37 @@ build().then(() => {
 </script>
 
 <script>
-for (const card of document.querySelectorAll('.reel')) {
+const reels = [...document.querySelectorAll('.reel')];
+function setSound(card, on) {
   const video = card.querySelector('video');
   const button = card.querySelector('.reel-sound');
-  button.addEventListener('click', () => {
+  video.muted = !on;
+  button.setAttribute('aria-pressed', String(on));
+  button.querySelector('span').textContent = on ? 'Sound on' : 'Sound off';
+}
+for (const card of reels) {
+  const video = card.querySelector('video');
+  const lines = [...card.querySelectorAll('.reel-lines li')];
+  setSound(card, false);
+  card.querySelector('.reel-sound').addEventListener('click', () => {
     const on = video.muted;
-    for (const v of document.querySelectorAll('.reel video')) {
-      v.muted = true;
-      v.closest('.reel').querySelector('.reel-sound').setAttribute('aria-pressed', 'false');
-      v.closest('.reel').querySelector('.reel-sound').textContent = 'Sound on';
-    }
-    video.muted = !on;
-    button.setAttribute('aria-pressed', String(on));
-    button.textContent = on ? 'Sound off' : 'Sound on';
+    for (const other of reels) setSound(other, false);
+    setSound(card, on);
     if (on) { video.currentTime = 0; video.play().catch(() => {}); }
+  });
+  video.addEventListener('timeupdate', () => {
+    const t = video.currentTime;
+    for (const li of lines) li.classList.toggle('on', t >= +li.dataset.start && t < +li.dataset.end);
   });
 }
 const reelWatch = new IntersectionObserver((entries) => {
   for (const e of entries) {
-    if (e.isIntersecting) e.target.play().catch(() => {});
-    else e.target.pause();
+    const video = e.target;
+    if (e.isIntersecting) video.play().catch(() => {});
+    else { video.pause(); setSound(video.closest('.reel'), false); }
   }
 }, { threshold: 0.4 });
-for (const v of document.querySelectorAll('.reel video')) reelWatch.observe(v);
+for (const card of reels) reelWatch.observe(card.querySelector('video'));
 </script>
 </body>
 </html>
