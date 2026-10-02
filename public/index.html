@@ -1543,6 +1543,15 @@ function stepSpin(dt) {
     if (Math.abs(spin[part]) < Math.abs(SECONDS_PER_RADIAN[part]) * 0.02) spin[part] = 0;
   }
 }
+function catchSpin(clock, part) {
+  if (!Object.values(spin).some(Boolean)) return false;
+  for (const p of Object.keys(spin)) spin[p] = 0;
+  if (T.mode !== 'timer') {
+    const lag = wrapAngle(clock.rings[part].rotation.z - (ringTargets()[part] + dragTwist[part]));
+    nudge(lag * SECONDS_PER_RADIAN[part]);
+  }
+  return true;
+}
 let drag = null;
 let emptyDown = null;
 
@@ -1581,7 +1590,8 @@ stage.addEventListener('pointerdown', (e) => {
   e.preventDefault();
   try { stage.setPointerCapture(e.pointerId); } catch (err) {}
   controls.autoRotate = false;
-  drag = { kind: 'pending', hit, x0: e.clientX, y0: e.clientY, shift: e.shiftKey, id: e.pointerId };
+  const caught = hit.part !== 'body' && catchSpin(hit.clock, hit.part);
+  drag = { kind: 'pending', hit, caught, x0: e.clientX, y0: e.clientY, shift: e.shiftKey, id: e.pointerId };
   stage.style.cursor = 'grabbing';
 }, { capture: true });
 
@@ -1622,7 +1632,7 @@ function endDrag(e) {
     emptyDown = null;
   }
   if (!drag || e.pointerId !== drag.id) return;
-  if (drag.kind === 'pending' && clocks.includes(drag.hit.clock)) clickSelect(drag.hit.clock, drag.shift);
+  if (drag.kind === 'pending' && !drag.caught && clocks.includes(drag.hit.clock)) clickSelect(drag.hit.clock, drag.shift);
   if (drag.kind === 'pull') releaseAll();
   if (drag.kind === 'ring') {
     dragTwist[drag.part] = 0;

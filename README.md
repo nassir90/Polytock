@@ -34,7 +34,7 @@ The hour ring moves smoothly, so at 10:08 the pointer sits just past the 10, a l
 
 ### Turn the rings by hand
 
-Grab any ring and turn it. The ring follows your pointer and the time moves with it: the hour ring in hours, the minute ring in minutes and the cap in seconds. Flick a ring and let go, and it keeps spinning, then slows back to normal time. In clock mode a **Back to now** button appears once you have moved the time away from the real one. **Fast** runs one clock hour every six seconds so you can watch the rings go round.
+Grab any ring and turn it. The ring follows your pointer and the time moves with it: the hour ring in hours, the minute ring in minutes and the cap in seconds. Flick a ring and let go, and it keeps spinning, then slows back to normal time. Press on any ring while they spin and they stop dead under your pointer, like catching a turning wheel. In clock mode a **Back to now** button appears once you have moved the time away from the real one. **Fast** runs one clock hour every six seconds so you can watch the rings go round.
 
 ### Drop in more clocks
 
