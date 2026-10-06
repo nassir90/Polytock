@@ -188,4 +188,5 @@ public/index.html   the whole app
 src/worker.js       serves the app under /games/polytock
 wrangler.jsonc      Worker, assets and routes
 docs/images/        README images, rendered from the app
+docs/dependencies.md what the app uses, and maintained libraries that could replace hand-written parts
 ```

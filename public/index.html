@@ -459,6 +459,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { ConvexGeometry } from 'three/addons/geometries/ConvexGeometry.js';
 import { ConvexHull } from 'three/addons/math/ConvexHull.js';
+import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 
 const css = getComputedStyle(document.documentElement);
 const token = (n) => css.getPropertyValue(n).trim();
@@ -477,7 +478,25 @@ const UP = new THREE.Vector3(0, 1, 0);
 const REFERENCE_INRADIUS = 1.56 / Math.sqrt(6);
 const CUBE_TURN = -Math.PI / 4;
 const ALIGNED = Math.PI / 3;
+const RING_NAMES = ['hour', 'minute', 'cap'];
+const MODES = ['clock', 'stopwatch', 'timer'];
+const AXES = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
+const FULLSCREEN_VERTEX = `varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`;
+const STUDIO = {
+  exposure: 1.05, envIntensity: 0.62,
+  keyColor: 0xfff1df, keyIntensity: 2.3, keyPosition: [-4.5, 9, 5.5],
+  rimIntensity: 1.4, hemiSky: 0xfff8ee, hemiGround: 0x8a7b6a, hemiIntensity: 0.42,
+};
 const wrapAngle = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+const toThreeQuat = (q) => new THREE.Quaternion(q.x, q.y, q.z, q.w);
+const toThreeVec = (v) => new THREE.Vector3(v.x, v.y, v.z);
+function softShadow(light, size, far) {
+  light.shadow.mapSize.set(size, size);
+  Object.assign(light.shadow.camera, { left: -9, right: 9, top: 9, bottom: -9, near: 2, far });
+  light.shadow.radius = 9;
+  light.shadow.blurSamples = 24;
+  light.shadow.bias = -0.0006;
+}
 
 const radial = (phi) => new THREE.Vector3(Math.sin(phi), -Math.cos(phi), 0);
 const tangent = (phi) => new THREE.Vector3(Math.cos(phi), Math.sin(phi), 0);
@@ -486,7 +505,7 @@ const stage = document.getElementById('stage');
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+renderer.toneMappingExposure = STUDIO.exposure;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.VSMShadowMap;
 stage.appendChild(renderer.domElement);
@@ -515,7 +534,7 @@ function studioEnvironment() {
 const pmrem = new THREE.PMREMGenerator(renderer);
 const studioEnv = pmrem.fromScene(studioEnvironment(), 0.03);
 scene.environment = studioEnv.texture;
-scene.environmentIntensity = 0.62;
+scene.environmentIntensity = STUDIO.envIntensity;
 
 const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 100);
 camera.position.set(-3.4, 2.6, 6.4);
@@ -530,21 +549,15 @@ controls.enableZoom = false;
 controls.maxPolarAngle = Math.PI * 0.53;
 controls.autoRotateSpeed = 0.6;
 
-const key = new THREE.DirectionalLight(0xfff1df, 2.3);
-key.position.set(-4.5, 9, 5.5);
+const key = new THREE.DirectionalLight(STUDIO.keyColor, STUDIO.keyIntensity);
+key.position.set(...STUDIO.keyPosition);
 key.castShadow = true;
-key.shadow.mapSize.set(4096, 4096);
-key.shadow.camera.left = -9; key.shadow.camera.right = 9;
-key.shadow.camera.top = 9; key.shadow.camera.bottom = -9;
-key.shadow.camera.near = 2; key.shadow.camera.far = 26;
-key.shadow.radius = 9;
-key.shadow.blurSamples = 24;
-key.shadow.bias = -0.0006;
+softShadow(key, 4096, 26);
 scene.add(key, key.target);
-const rim = new THREE.DirectionalLight(0xd6e4ff, 1.4);
+const rim = new THREE.DirectionalLight(0xd6e4ff, STUDIO.rimIntensity);
 rim.position.set(5, 2.5, -6);
 scene.add(rim);
-const hemi = new THREE.HemisphereLight(0xfff8ee, 0x8a7b6a, 0.42);
+const hemi = new THREE.HemisphereLight(STUDIO.hemiSky, STUDIO.hemiGround, STUDIO.hemiIntensity);
 scene.add(hemi);
 
 const floor = new THREE.Mesh(
@@ -566,7 +579,7 @@ const glyphMat = new THREE.MeshStandardMaterial({ color: GLYPH, roughness: 0.6, 
 
 function cornersOf(planes) {
   const pts = [];
-  const m = new THREE.Matrix3();
+  const m = new THREE.Matrix3(), inv = new THREE.Matrix3();
   const v = new THREE.Vector3();
   for (let i = 0; i < planes.length; i++)
     for (let j = i + 1; j < planes.length; j++)
@@ -574,7 +587,7 @@ function cornersOf(planes) {
         const a = planes[i], b = planes[j], c = planes[k];
         m.set(a.n.x, a.n.y, a.n.z, b.n.x, b.n.y, b.n.z, c.n.x, c.n.y, c.n.z);
         if (Math.abs(m.determinant()) < 1e-8) continue;
-        v.set(a.d, b.d, c.d).applyMatrix3(m.clone().invert());
+        v.set(a.d, b.d, c.d).applyMatrix3(inv.copy(m).invert());
         if (!planes.every((p) => p.n.dot(v) <= p.d + 1e-6)) continue;
         if (pts.some((q) => q.p.distanceToSquared(v) < 1e-12)) continue;
         pts.push({ p: v.clone(), on: planes.map((p, idx) => (Math.abs(p.n.dot(v) - p.d) < 1e-5 ? idx : -1)).filter((x) => x >= 0) });
@@ -582,8 +595,7 @@ function cornersOf(planes) {
   return pts;
 }
 
-function chamferedSolid(planes, width) {
-  const corners = cornersOf(planes);
+function chamferedSolid(planes, width, corners = cornersOf(planes)) {
   const extra = [];
   for (let i = 0; i < planes.length; i++)
     for (let j = i + 1; j < planes.length; j++) {
@@ -871,8 +883,9 @@ function makeClock({ planes, hint, mass, cutFraction = P.cutFraction, labelStyle
   const frame = new THREE.Matrix4().makeBasis(e1, e2, axis).setPosition(origin);
 
   const solidPlanes = planes.concat([planeThrough(axis, origin)]);
+  const solidCorners = cornersOf(solidPlanes);
   const rig = new THREE.Group();
-  const bodyMesh = new THREE.Mesh(chamferedSolid(solidPlanes, P.bevelWidth), bodyMat);
+  const bodyMesh = new THREE.Mesh(chamferedSolid(solidPlanes, P.bevelWidth, solidCorners), bodyMat);
   bodyMesh.castShadow = true;
   bodyMesh.receiveShadow = true;
   bodyMesh.userData.part = 'body';
@@ -922,7 +935,7 @@ function makeClock({ planes, hint, mass, cutFraction = P.cutFraction, labelStyle
   }
 
   const body = new CANNON.Body({ mass, linearDamping: 0.12, angularDamping: 0.22 });
-  const solidHull = hullShape(cornersOf(solidPlanes).map((c) => c.p));
+  const solidHull = hullShape(solidCorners.map((c) => c.p));
   body.addShape(solidHull.shape, solidHull.offset);
   const ringPoints = [new THREE.Vector3(0, 0, height)];
   for (const spec of [specs.hour, specs.minute]) {
@@ -939,7 +952,7 @@ function makeClock({ planes, hint, mass, cutFraction = P.cutFraction, labelStyle
 
   rig.traverse((o) => { if (o.isMesh && !o.userData.decal) o.layers.enable(OCCLUDER_LAYER); });
   pointer.traverse((o) => { if (o.isMesh) o.layers.enable(BLOOM_LAYER); });
-  const footprint = cornersOf(solidPlanes).map((c) => c.p);
+  const footprint = solidCorners.map((c) => c.p);
   const clock = { rig, axisGroup, rings, body, bodyMesh, scale, faces: planes, axis, corners: footprint, anim: null };
   rig.userData.clock = clock;
   clockRoot.add(rig);
@@ -964,8 +977,7 @@ function disposeClock(clock) {
 }
 
 function cubePlanes(half, turn) {
-  return [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]
-    .map((a) => plane(new THREE.Vector3(...a).applyAxisAngle(UP, turn), half));
+  return AXES.map((a) => plane(new THREE.Vector3(...a).applyAxisAngle(UP, turn), half));
 }
 const GOLDEN = (1 + Math.sqrt(5)) / 2;
 function dodecahedronPlanes(inradius) {
@@ -974,8 +986,7 @@ function dodecahedronPlanes(inradius) {
   return normals.map((n) => plane(new THREE.Vector3(...n), inradius));
 }
 function truncatedOctahedronPlanes(s) {
-  const planes = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]
-    .map((n) => plane(new THREE.Vector3(...n), 2 * s));
+  const planes = AXES.map((n) => plane(new THREE.Vector3(...n), 2 * s));
   for (const a of [-1, 1]) for (const b of [-1, 1]) for (const c of [-1, 1]) planes.push(plane(new THREE.Vector3(a, b, c), SQ3 * s));
   return planes;
 }
@@ -995,8 +1006,9 @@ const MAX_EXTRA = 12;
 
 let mainClock = null;
 
+const extraClocks = () => clocks.filter((c) => c !== mainClock);
 function spawnClock(kind) {
-  const extras = clocks.filter((c) => c !== mainClock);
+  const extras = extraClocks();
   if (extras.length >= MAX_EXTRA) disposeClock(extras[0]);
   const clock = makeClock({ ...SHAPES[kind](), hint: new THREE.Vector3(0.3, 1, 0.45), mass: 1.8 });
   const a = Math.random() * TWO_PI, d = 2.8 + Math.random() * 1.6;
@@ -1028,7 +1040,7 @@ const ANIM_SECONDS = 1.8;
 const smooth = (t) => t * t * (3 - 2 * t);
 
 function restPose(clock) {
-  const current = new THREE.Quaternion(clock.body.quaternion.x, clock.body.quaternion.y, clock.body.quaternion.z, clock.body.quaternion.w);
+  const current = toThreeQuat(clock.body.quaternion);
   let base = null, score = Infinity;
   for (const f of clock.faces) {
     const s = f.n.dot(clock.axis) + 0.01 * f.n.clone().applyQuaternion(current).y;
@@ -1050,8 +1062,8 @@ function standUp(list) {
   list.forEach((c, i) => {
     if (pulls.some((p) => p.body === c.body)) releaseAll();
     const pose = restPose(c);
-    const p0 = new THREE.Vector3(c.body.position.x, c.body.position.y, c.body.position.z);
-    const q0 = new THREE.Quaternion(c.body.quaternion.x, c.body.quaternion.y, c.body.quaternion.z, c.body.quaternion.w);
+    const p0 = toThreeVec(c.body.position);
+    const q0 = toThreeQuat(c.body.quaternion);
     c.anim = { t: -i * 0.09, p0, q0, q1: pose.q, yRest: pose.y, yHover: Math.max(p0.y, pose.y) + RISE };
     c.body.type = CANNON.Body.KINEMATIC;
     c.body.velocity.setZero();
@@ -1217,9 +1229,7 @@ const outlineMat = new THREE.ShaderMaterial({
     uColor: { value: new THREE.Color('#7c7f86') },
     uAlpha: { value: 0.6 },
   },
-  vertexShader: `
-    varying vec2 vUv;
-    void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+  vertexShader: FULLSCREEN_VERTEX,
   fragmentShader: `
     uniform sampler2D tMask; uniform vec2 uTexel; uniform vec3 uColor; uniform float uAlpha;
     varying vec2 vUv;
@@ -1238,38 +1248,43 @@ const outlineMat = new THREE.ShaderMaterial({
     }`,
   transparent: true, depthTest: false, depthWrite: false,
 });
-const outlineScene = new THREE.Scene();
-const outlineQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), outlineMat);
-outlineQuad.frustumCulled = false;
-outlineScene.add(outlineQuad);
-const outlineCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+const outlinePass = new FullScreenQuad(outlineMat);
 const _clear = new THREE.Color();
 
-function renderOutline(time) {
-  if (!selection.size) return;
-  const background = scene.background, fog = scene.fog;
-  const clearAlpha = renderer.getClearAlpha();
+function offscreen(target, draw) {
+  const background = scene.background, fog = scene.fog, clearAlpha = renderer.getClearAlpha();
   renderer.getClearColor(_clear);
   scene.background = null;
   scene.fog = null;
-  scene.overrideMaterial = maskMat;
   renderer.shadowMap.autoUpdate = false;
-  camera.layers.set(OUTLINE_LAYER);
-  renderer.setRenderTarget(maskTarget);
+  renderer.setRenderTarget(target);
   renderer.setClearColor(0x000000, 1);
   renderer.clear();
-  renderer.render(scene, camera);
-  renderer.setRenderTarget(null);
+  draw();
   camera.layers.set(0);
   scene.overrideMaterial = null;
   scene.background = background;
   scene.fog = fog;
   renderer.shadowMap.autoUpdate = true;
+  renderer.setRenderTarget(null);
   renderer.setClearColor(_clear, clearAlpha);
-  outlineMat.uniforms.uAlpha.value = 0.3 + 0.55 * (0.5 + 0.5 * Math.sin(time * TWO_PI / 1.4));
+}
+function renderLayer(layer, material = null) {
+  camera.layers.set(layer);
+  scene.overrideMaterial = material;
+  renderer.render(scene, camera);
+}
+function overlay(pass) {
   renderer.autoClear = false;
-  renderer.render(outlineScene, outlineCam);
+  pass.render(renderer);
   renderer.autoClear = true;
+}
+
+function renderOutline(time) {
+  if (!selection.size) return;
+  offscreen(maskTarget, () => renderLayer(OUTLINE_LAYER, maskMat));
+  outlineMat.uniforms.uAlpha.value = 0.3 + 0.55 * (0.5 + 0.5 * Math.sin(time * TWO_PI / 1.4));
+  overlay(outlinePass);
 }
 
 const ringAngle = (v) => -THREE.MathUtils.degToRad(30 * v - 45);
@@ -1317,7 +1332,10 @@ function hms(sec, { tenths = false, twelve = false } = {}) {
 
 const readout = document.getElementById('readout');
 const readoutLabel = document.getElementById('readout-label');
-let lastText = '', lastLabel = '';
+const shown = new WeakMap();
+function setText(el, text) {
+  if (shown.get(el) !== text) { el.textContent = text; shown.set(el, text); }
+}
 function updateReadout() {
   let text, label;
   if (T.mode === 'clock') {
@@ -1331,8 +1349,8 @@ function updateReadout() {
     text = hms(Math.ceil(timerRemaining()));
     label = T.tm.done ? 'Timer \u00b7 done' : T.tm.running ? 'Timer \u00b7 counting down' : 'Timer';
   }
-  if (text !== lastText) { readout.textContent = text; lastText = text; }
-  if (label !== lastLabel) { readoutLabel.textContent = label; lastLabel = label; }
+  setText(readout, text);
+  setText(readoutLabel, label);
   readout.classList.toggle('alarm', T.mode === 'timer' && T.tm.done);
 }
 
@@ -1357,11 +1375,10 @@ function applyRings(dt) {
   const goal = ringTargets();
   const ease = 1 - Math.exp(-dt * 9);
   for (const clock of clocks) {
-    for (const name of ['hour', 'minute', 'cap']) {
+    for (const name of RING_NAMES) {
       const ring = clock.rings[name];
       const cur = ring.rotation.z;
-      const want = goal[name] + dragTwist[name];
-      const target = cur + Math.atan2(Math.sin(want - cur), Math.cos(want - cur));
+      const target = cur + wrapAngle(goal[name] + dragTwist[name] - cur);
       const held = drag && drag.kind === 'ring';
       ring.rotation.z = held ? target : cur + (target - cur) * ease;
     }
@@ -1396,13 +1413,13 @@ const HINTS = {
 };
 function setMode(mode) {
   T.mode = mode;
-  for (const m of ['clock', 'stopwatch', 'timer']) {
+  for (const m of MODES) {
     $('tab-' + m).setAttribute('aria-pressed', String(m === mode));
     $('panel-' + m).hidden = m !== mode;
   }
   $('hint').textContent = HINTS[mode];
 }
-for (const m of ['clock', 'stopwatch', 'timer']) $('tab-' + m).addEventListener('click', () => setMode(m));
+for (const m of MODES) $('tab-' + m).addEventListener('click', () => setMode(m));
 
 $('clock-fast').addEventListener('click', () => {
   T.fast = !T.fast;
@@ -1415,8 +1432,8 @@ $('clock-now').addEventListener('click', () => {
 });
 
 function syncButtons() {
-  $('sw-start').textContent = T.sw.running ? 'Pause' : stopwatchElapsed() > 0 ? 'Resume' : 'Start';
-  $('tm-start').textContent = T.tm.running ? 'Pause' : 'Start';
+  setText($('sw-start'), T.sw.running ? 'Pause' : stopwatchElapsed() > 0 ? 'Resume' : 'Start');
+  setText($('tm-start'), T.tm.running ? 'Pause' : 'Start');
   $('clock-now').hidden = !(T.fast || Math.abs(T.offset) >= 0.5);
 }
 $('sw-start').addEventListener('click', () => {
@@ -1425,13 +1442,12 @@ $('sw-start').addEventListener('click', () => {
 });
 $('sw-reset').addEventListener('click', () => { T.sw.running = false; T.sw.base = 0; });
 
-for (const b of document.querySelectorAll('[data-minutes]')) {
-  b.addEventListener('click', () => {
-    T.tm.running = false;
-    T.tm.done = false;
-    T.tm.remaining = T.tm.set = Number(b.dataset.minutes) * 60;
-  });
+function resetTimer(seconds = T.tm.set) {
+  T.tm.running = false;
+  T.tm.done = false;
+  T.tm.remaining = T.tm.set = seconds;
 }
+for (const b of document.querySelectorAll('[data-minutes]')) b.addEventListener('click', () => resetTimer(Number(b.dataset.minutes) * 60));
 $('tm-start').addEventListener('click', () => {
   ensureAudio();
   if (T.tm.running) { T.tm.remaining = timerRemaining(); T.tm.running = false; return; }
@@ -1441,11 +1457,7 @@ $('tm-start').addEventListener('click', () => {
   T.tm.running = true;
   T.tm.done = false;
 });
-$('tm-reset').addEventListener('click', () => {
-  T.tm.running = false;
-  T.tm.done = false;
-  T.tm.remaining = T.tm.set;
-});
+$('tm-reset').addEventListener('click', () => resetTimer());
 
 $('upright').addEventListener('click', () => standUp(selection.size ? [...selection] : [mainClock]));
 let zoomGoal = null;
@@ -1471,7 +1483,7 @@ window.addEventListener('keydown', (e) => {
 });
 for (const b of document.querySelectorAll('[data-shape]')) b.addEventListener('click', () => spawnClock(b.dataset.shape));
 $('clear-shapes').addEventListener('click', () => {
-  for (const c of clocks.filter((c) => c !== mainClock)) disposeClock(c);
+  for (const c of extraClocks()) disposeClock(c);
   refreshSelection();
 });
 const spinBtn = $('spin');
@@ -1536,7 +1548,7 @@ function fling(d) {
 }
 function stepSpin(dt) {
   const k = Math.exp(-dt * SPIN_DECAY);
-  for (const part of ['hour', 'minute', 'cap']) {
+  for (const part of RING_NAMES) {
     if (!spin[part]) continue;
     nudge(spin[part] * dt * (1 + k) / 2);
     spin[part] *= k;
@@ -1615,7 +1627,7 @@ stage.addEventListener('pointermove', (e) => {
     if (!clocks.includes(drag.clock)) return;
     const phi = axisAngleAt(drag.clock, drag.s);
     if (phi === null) return;
-    const dphi = Math.atan2(Math.sin(phi - drag.phi), Math.cos(phi - drag.phi));
+    const dphi = wrapAngle(phi - drag.phi);
     drag.phi = phi;
     const stamp = performance.now();
     drag.samples.push([stamp, dphi]);
@@ -1739,7 +1751,7 @@ const skyDome = new THREE.Mesh(new THREE.SphereGeometry(2000, 48, 24), skyMat);
 skyDome.renderOrder = -2;
 outdoor.add(skyDome);
 const skyFogScene = new THREE.Scene();
-skyFogScene.add(new THREE.Mesh(new THREE.SphereGeometry(2000, 48, 24), skyMat));
+skyFogScene.add(new THREE.Mesh(skyDome.geometry, skyMat));
 
 const skyEnvScene = new THREE.Scene();
 skyEnvScene.add(new THREE.Mesh(new THREE.SphereGeometry(500, 32, 16), skyMat));
@@ -1791,7 +1803,6 @@ bladeMat.onBeforeCompile = (shader) => {
     float h = clamp(position.y / ${BLADE_H.toFixed(3)}, 0.0, 1.0);
     transformed.x *= 1.0 - 0.9 * h;
     vec4 root = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
-    mat3 toLocal = inverse(mat3(instanceMatrix));
     float gust = sin(uWind * 1.7 + root.x * 0.6 + root.z * 0.4) * 0.6 + sin(uWind * 3.3 + root.x * 1.9 - root.z * 1.3) * 0.25;
     vec2 push = vec2(0.0);
     float sink = 0.0;
@@ -1807,8 +1818,16 @@ bladeMat.onBeforeCompile = (shader) => {
     float shove = min(length(push), 1.0);
     vec2 away = shove > 0.0 ? normalize(push) * shove : vec2(0.0);
     vec3 bend = vec3(1.0, 0.0, 0.35) * gust * 0.07 * (1.0 - shove) + vec3(away.x, -0.45 * shove, away.y) * 0.17;
-    transformed += toLocal * bend * h * h;
-    transformed.y *= 1.0 - sink;`);
+    transformed.y *= 1.0 - sink;
+    vec3 bendWorld = bend * h * h;
+    bendWorld.y *= 1.0 - sink;`).replace('#include <project_vertex>', `
+    vec4 mvPosition = instanceMatrix * vec4(transformed, 1.0);
+    mvPosition.xyz += bendWorld;
+    mvPosition = modelViewMatrix * mvPosition;
+    gl_Position = projectionMatrix * mvPosition;`).replace('#include <worldpos_vertex>', `
+    vec4 worldPosition = instanceMatrix * vec4(transformed, 1.0);
+    worldPosition.xyz += bendWorld;
+    worldPosition = modelMatrix * worldPosition;`);
   patchSkyFog(shader);
 };
 const blades = new THREE.InstancedMesh(bladeGeo, bladeMat, BLADES);
@@ -1867,13 +1886,7 @@ moonGlow.renderOrder = -1;
 outdoor.add(moonGlow, moon);
 
 const moonLight = new THREE.DirectionalLight(0x9fb7ff, 0);
-moonLight.shadow.mapSize.set(2048, 2048);
-moonLight.shadow.camera.left = -9; moonLight.shadow.camera.right = 9;
-moonLight.shadow.camera.top = 9; moonLight.shadow.camera.bottom = -9;
-moonLight.shadow.camera.near = 2; moonLight.shadow.camera.far = 30;
-moonLight.shadow.radius = 9;
-moonLight.shadow.blurSamples = 24;
-moonLight.shadow.bias = -0.0006;
+softShadow(moonLight, 2048, 30);
 moonLight.shadow.intensity = 0.75;
 scene.add(moonLight, moonLight.target);
 const nightFill = new THREE.DirectionalLight(0x8fa3d6, 0);
@@ -1884,7 +1897,7 @@ const bloomB = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType });
 const blackMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
 const blurMat = new THREE.ShaderMaterial({
   uniforms: { tInput: { value: null }, uDir: { value: new THREE.Vector2() } },
-  vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+  vertexShader: FULLSCREEN_VERTEX,
   fragmentShader: `
     uniform sampler2D tInput; uniform vec2 uDir; varying vec2 vUv;
     void main() {
@@ -1897,59 +1910,38 @@ const blurMat = new THREE.ShaderMaterial({
 });
 const bloomMixMat = new THREE.ShaderMaterial({
   uniforms: { tBloom: { value: bloomA.texture }, uStrength: { value: 0 } },
-  vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
+  vertexShader: FULLSCREEN_VERTEX,
   fragmentShader: `
     uniform sampler2D tBloom; uniform float uStrength; varying vec2 vUv;
     void main() { gl_FragColor = vec4(texture2D(tBloom, vUv).rgb * uStrength, 1.0); }`,
   transparent: true, blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false, toneMapped: false,
 });
-const postScene = new THREE.Scene();
-const postQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), blurMat);
-postQuad.frustumCulled = false;
-postScene.add(postQuad);
+const postPass = new FullScreenQuad(blurMat);
 let bloomStrength = 0;
 
 function renderBloom() {
   if (bloomStrength < 0.02) return;
-  const background = scene.background, fog = scene.fog;
-  const clearAlpha = renderer.getClearAlpha();
-  renderer.getClearColor(_clear);
-  scene.background = null;
-  scene.fog = null;
-  renderer.shadowMap.autoUpdate = false;
-  renderer.setRenderTarget(bloomA);
-  renderer.setClearColor(0x000000, 1);
-  renderer.clear();
-  camera.layers.set(OCCLUDER_LAYER);
-  scene.overrideMaterial = blackMat;
-  renderer.render(scene, camera);
-  scene.overrideMaterial = null;
-  camera.layers.set(BLOOM_LAYER);
-  renderer.autoClear = false;
-  renderer.render(scene, camera);
-  renderer.autoClear = true;
-  camera.layers.set(0);
-  scene.background = background;
-  scene.fog = fog;
-  renderer.shadowMap.autoUpdate = true;
-  postQuad.material = blurMat;
+  offscreen(bloomA, () => {
+    renderLayer(OCCLUDER_LAYER, blackMat);
+    renderer.autoClear = false;
+    renderLayer(BLOOM_LAYER);
+    renderer.autoClear = true;
+  });
+  postPass.material = blurMat;
   for (const spread of [1, 2.5]) {
     blurMat.uniforms.tInput.value = bloomA.texture;
     blurMat.uniforms.uDir.value.set(spread / bloomA.width, 0);
     renderer.setRenderTarget(bloomB);
-    renderer.render(postScene, outlineCam);
+    postPass.render(renderer);
     blurMat.uniforms.tInput.value = bloomB.texture;
     blurMat.uniforms.uDir.value.set(0, spread / bloomA.height);
     renderer.setRenderTarget(bloomA);
-    renderer.render(postScene, outlineCam);
+    postPass.render(renderer);
   }
   renderer.setRenderTarget(null);
-  renderer.setClearColor(_clear, clearAlpha);
-  postQuad.material = bloomMixMat;
+  postPass.material = bloomMixMat;
   bloomMixMat.uniforms.uStrength.value = bloomStrength;
-  renderer.autoClear = false;
-  renderer.render(postScene, outlineCam);
-  renderer.autoClear = true;
+  overlay(postPass);
 }
 
 function renderSkyFog() {
@@ -1959,7 +1951,10 @@ function renderSkyFog() {
 }
 
 const sunDir = new THREE.Vector3(0, 1, 0), moonDir = new THREE.Vector3(0, -1, 0), lightDir = new THREE.Vector3();
-const tint = new THREE.Color();
+const KEY_SUN = new THREE.Color('#fff2e2'), KEY_DUSK = new THREE.Color('#ff9a5a'), RIM_COLOR = new THREE.Color('#d6e4ff');
+const HEMI_NIGHT = new THREE.Color('#5a6c9c'), GROUND_DAY = new THREE.Color('#3d5a2a'), GROUND_NIGHT = new THREE.Color('#1a2418');
+const CLOUD_LIGHT = [new THREE.Color('#ffffff'), new THREE.Color('#ffb48a'), new THREE.Color('#3e4963')];
+const CLOUD_SHADE = [new THREE.Color('#a9b4c6'), new THREE.Color('#7a5a78'), new THREE.Color('#111725')];
 const SKY_DAY = new THREE.Color('#bcd9f2'), SKY_DUSK = new THREE.Color('#f39a5c'), SKY_NIGHT = new THREE.Color('#0d1830');
 const ZENITH_DAY = new THREE.Color('#3d7fd6'), ZENITH_DUSK = new THREE.Color('#2b3f72'), ZENITH_NIGHT = new THREE.Color('#03060f');
 const MIN_SHADOW_ELEVATION = 0.42;
@@ -2018,7 +2013,7 @@ function updateOutdoor(time) {
 
   aimLight(key, sunDir);
   key.intensity = 4.2 * THREE.MathUtils.smoothstep(e, -0.03, 0.18);
-  key.color.set('#fff2e2').lerp(tint.set('#ff9a5a'), dusk * 0.85);
+  key.color.copy(KEY_SUN).lerp(KEY_DUSK, dusk * 0.85);
   key.shadow.intensity = THREE.MathUtils.smoothstep(e, 0.02, 0.3);
   aimLight(moonLight, moonDir);
   moonLight.intensity = 2.4 * night * THREE.MathUtils.smoothstep(moonDir.y, 0.0, 0.25);
@@ -2027,11 +2022,11 @@ function updateOutdoor(time) {
     key.castShadow = sunLeads;
     moonLight.castShadow = !sunLeads;
   }
-  hemi.color.copy(SKY_DAY).lerp(SKY_DUSK, dusk * 0.6).lerp(tint.set('#5a6c9c'), night);
-  hemi.groundColor.set('#3d5a2a').lerp(tint.set('#1a2418'), night);
+  hemi.color.copy(SKY_DAY).lerp(SKY_DUSK, dusk * 0.6).lerp(HEMI_NIGHT, night);
+  hemi.groundColor.copy(GROUND_DAY).lerp(GROUND_NIGHT, night);
   hemi.intensity = 0.3 + 0.8 * day + 1.0 * night;
   rim.intensity = 0.4 * day + 0.6 * night;
-  rim.color.set('#d6e4ff');
+  rim.color.copy(RIM_COLOR);
   outdoorFog.color.copy(SKY_DAY).lerp(SKY_DUSK, dusk).lerp(SKY_NIGHT, night);
   skyMat.uniforms.uHorizon.value.copy(outdoorFog.color);
   skyMat.uniforms.uZenith.value.copy(ZENITH_DAY).lerp(ZENITH_DUSK, dusk).lerp(ZENITH_NIGHT, night);
@@ -2039,8 +2034,8 @@ function updateOutdoor(time) {
   skyMat.uniforms.uSunColor.value.copy(key.color);
   skyMat.uniforms.uGlow.value = Math.max(day, dusk) * (1 - night);
   skyMat.uniforms.uTime.value = time;
-  skyMat.uniforms.uCloudLight.value.set('#ffffff').lerp(tint.set('#ffb48a'), dusk).lerp(tint.set('#3e4963'), night);
-  skyMat.uniforms.uCloudShade.value.set('#a9b4c6').lerp(tint.set('#7a5a78'), dusk).lerp(tint.set('#111725'), night);
+  skyMat.uniforms.uCloudLight.value.copy(CLOUD_LIGHT[0]).lerp(CLOUD_LIGHT[1], dusk).lerp(CLOUD_LIGHT[2], night);
+  skyMat.uniforms.uCloudShade.value.copy(CLOUD_SHADE[0]).lerp(CLOUD_SHADE[1], dusk).lerp(CLOUD_SHADE[2], night);
   scene.environmentIntensity = 0.24 + 0.1 * day;
   nightFill.position.copy(camera.position).sub(controls.target).normalize().multiplyScalar(20).add(controls.target);
   nightFill.target.position.copy(controls.target);
@@ -2079,20 +2074,20 @@ function setOutdoors(on) {
     updateOutdoor(performance.now() / 1000);
   } else {
     scene.environment = studioEnv.texture;
-    scene.environmentIntensity = 0.62;
-    key.position.set(-4.5, 9, 5.5);
-    key.intensity = 2.3;
-    key.color.set(0xfff1df);
+    scene.environmentIntensity = STUDIO.envIntensity;
+    key.position.set(...STUDIO.keyPosition);
+    key.intensity = STUDIO.keyIntensity;
+    key.color.set(STUDIO.keyColor);
     key.castShadow = true;
     key.shadow.intensity = 1;
     moonLight.intensity = 0;
     moonLight.castShadow = false;
     nightFill.intensity = 0;
-    hemi.color.set(0xfff8ee);
-    hemi.groundColor.set(0x8a7b6a);
-    hemi.intensity = 0.42;
-    rim.intensity = 1.4;
-    renderer.toneMappingExposure = 1.05;
+    hemi.color.set(STUDIO.hemiSky);
+    hemi.groundColor.set(STUDIO.hemiGround);
+    hemi.intensity = STUDIO.hemiIntensity;
+    rim.intensity = STUDIO.rimIntensity;
+    renderer.toneMappingExposure = STUDIO.exposure;
     bloomStrength = 0;
     document.body.classList.remove('night');
   }
