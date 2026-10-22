@@ -347,11 +347,13 @@ const STUDIO = {
 const wrapAngle = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 const toThreeQuat = (q) => new THREE.Quaternion(q.x, q.y, q.z, q.w);
 const toThreeVec = (v) => new THREE.Vector3(v.x, v.y, v.z);
+const TOUCH = window.matchMedia('(pointer: coarse)').matches;
+const QUALITY = { shadow: TOUCH ? 1024 : 2048, maxPixelRatio: TOUCH ? 1.5 : 2, grass: TOUCH ? 0.5 : 1 };
 function softShadow(light, size, far) {
   light.shadow.mapSize.set(size, size);
   Object.assign(light.shadow.camera, { left: -9, right: 9, top: 9, bottom: -9, near: 2, far });
-  light.shadow.radius = 9;
-  light.shadow.blurSamples = 24;
+  light.shadow.radius = 9 * size / 4096;
+  light.shadow.blurSamples = size >= 2048 ? 12 : 8;
   light.shadow.bias = -0.0006;
 }
 
@@ -360,10 +362,11 @@ const tangent = (phi) => new THREE.Vector3(Math.cos(phi), Math.sin(phi), 0);
 
 const stage = document.getElementById('stage');
 const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, QUALITY.maxPixelRatio));
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = STUDIO.exposure;
 renderer.shadowMap.enabled = true;
+renderer.shadowMap.autoUpdate = false;
 renderer.shadowMap.type = THREE.VSMShadowMap;
 stage.appendChild(renderer.domElement);
 
@@ -409,7 +412,7 @@ controls.autoRotateSpeed = 0.6;
 const key = new THREE.DirectionalLight(STUDIO.keyColor, STUDIO.keyIntensity);
 key.position.set(...STUDIO.keyPosition);
 key.castShadow = true;
-softShadow(key, 4096, 26);
+softShadow(key, QUALITY.shadow, 26);
 scene.add(key, key.target);
 const rim = new THREE.DirectionalLight(0xd6e4ff, STUDIO.rimIntensity);
 rim.position.set(5, 2.5, -6);
@@ -1113,7 +1116,6 @@ function offscreen(target, draw) {
   renderer.getClearColor(_clear);
   scene.background = null;
   scene.fog = null;
-  renderer.shadowMap.autoUpdate = false;
   renderer.setRenderTarget(target);
   renderer.setClearColor(0x000000, 1);
   renderer.clear();
@@ -1122,7 +1124,6 @@ function offscreen(target, draw) {
   scene.overrideMaterial = null;
   scene.background = background;
   scene.fog = fog;
-  renderer.shadowMap.autoUpdate = true;
   renderer.setRenderTarget(null);
   renderer.setClearColor(_clear, clearAlpha);
 }
@@ -1701,6 +1702,7 @@ const blades = new THREE.InstancedMesh(bladeGeo, bladeMat, BLADES);
     blades.setColorAt(i, c);
   }
 }
+blades.count = Math.round(BLADES * QUALITY.grass);
 blades.receiveShadow = true;
 blades.frustumCulled = false;
 outdoor.add(blades);
@@ -1742,7 +1744,7 @@ moonGlow.renderOrder = -1;
 outdoor.add(moonGlow, moon);
 
 const moonLight = new THREE.DirectionalLight(0x9fb7ff, 0);
-softShadow(moonLight, 2048, 30);
+softShadow(moonLight, QUALITY.shadow / 2, 30);
 moonLight.shadow.intensity = 0.75;
 scene.add(moonLight, moonLight.target);
 const nightFill = new THREE.DirectionalLight(0x8fa3d6, 0);
@@ -1978,11 +1980,44 @@ resize();
 const _focus = new THREE.Vector3();
 let lastFrame = performance.now();
 
+const shadowState = { clocks: -1, outdoors: null, key: new THREE.Vector3(), moon: new THREE.Vector3() };
+function shadowsChanged() {
+  let changed = pulls.length > 0 || clocks.length !== shadowState.clocks || outdoors !== shadowState.outdoors
+    || key.position.distanceToSquared(shadowState.key) > 1e-4 || moonLight.position.distanceToSquared(shadowState.moon) > 1e-4;
+  for (const c of clocks) {
+    if (c.anim || c.body.sleepState !== CANNON.Body.SLEEPING) changed = true;
+    const seen = (c.shadowRings ||= {});
+    for (const n of RING_NAMES) if (!(Math.abs(c.rings[n].rotation.z - (seen[n] ?? Infinity)) <= 0.015)) changed = true;
+  }
+  if (!changed) return false;
+  for (const c of clocks) for (const n of RING_NAMES) c.shadowRings[n] = c.rings[n].rotation.z;
+  Object.assign(shadowState, { clocks: clocks.length, outdoors });
+  shadowState.key.copy(key.position);
+  shadowState.moon.copy(moonLight.position);
+  return true;
+}
+
+const pace = { ratio: renderer.getPixelRatio(), wait: 2, frames: 0, time: 0 };
+function keepPace(dt) {
+  if (pace.wait > 0) { pace.wait -= dt; return; }
+  pace.frames++;
+  pace.time += dt;
+  if (pace.time < 2) return;
+  if (pace.time / pace.frames > 1 / 36 && pace.ratio > 1) {
+    pace.ratio = Math.max(1, pace.ratio - 0.25);
+    renderer.setPixelRatio(pace.ratio);
+    resize();
+  }
+  pace.frames = 0;
+  pace.time = 0;
+}
+
 build().then(() => {
   const loop = () => {
     const now = performance.now();
     const dt = Math.min((now - lastFrame) / 1000, 0.1);
     lastFrame = now;
+    keepPace(dt);
 
     if (T.fast) T.offset += dt * 599;
     if (T.tm.running && timerRemaining() <= 0) {
@@ -2015,6 +2050,7 @@ build().then(() => {
       updateOutdoor(now / 1000);
       renderSkyFog();
     }
+    if (shadowsChanged()) renderer.shadowMap.needsUpdate = true;
     renderer.render(scene, camera);
     renderBloom();
     renderOutline(now / 1000);
