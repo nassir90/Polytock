@@ -38,10 +38,23 @@
   }
   .site-head {
     aspect-ratio: 1 / 1;
-    display: grid;
-    place-items: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6cqi;
+    text-align: center;
     container-type: inline-size;
   }
+  .site-credit {
+    margin: 0;
+    max-width: 80%;
+    font-size: clamp(11px, 3.8cqi, 14px);
+    line-height: 1.45;
+    color: var(--ink-soft);
+  }
+  .site-credit a { color: var(--ink); text-underline-offset: 3px; }
+  .site-credit a:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
   .site-title {
     margin: 0;
     font: 500 15cqi/1 var(--display);
@@ -205,6 +218,7 @@
 <section class="reels" aria-label="Polytock">
   <header class="site-head">
     <h1 class="site-title">Polytock</h1>
+    <p class="site-credit">Inspired by <a href="https://www.instagram.com/reel/Dd2_EWny62a/" rel="noopener">this reel</a> by <a href="https://www.instagram.com/sushi_watches/" rel="noopener">@sushi_watches</a></p>
   </header>
   <figure class="reel">
     <div class="reel-frame">
