@@ -33,6 +33,9 @@
     gap: clamp(12px, 2.5vw, 24px);
     align-items: start;
   }
+  @media (min-width: 900px) {
+    .reels { grid-template-columns: repeat(3, minmax(0, 360px)); }
+  }
   .site-head {
     aspect-ratio: 1 / 1;
     display: grid;
@@ -201,14 +204,14 @@
 </head>
 <body>
 <section class="reels" aria-label="Polytock">
+  <header class="site-head">
+    <h1 class="site-title">Polytock</h1>
+  </header>
   <figure class="reel">
     <div class="reel-frame">
       <video src="videos/promo-1-throw.mp4" poster="videos/promo-1-throw.jpg" muted loop playsinline preload="metadata" aria-label="A clock you can throw"></video>
     </div>
   </figure>
-  <header class="site-head">
-    <h1 class="site-title">Polytock</h1>
-  </header>
   <figure class="reel">
     <div class="reel-frame">
       <video src="videos/promo-2-spin.mp4" poster="videos/promo-2-spin.jpg" muted loop playsinline preload="metadata" aria-label="Spin the hands"></video>
