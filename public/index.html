@@ -88,7 +88,8 @@
     gap: 16px;
     pointer-events: none;
   }
-  .readout-wrap { text-align: left; }
+  .readout-wrap { margin: 0 auto; text-align: center; }
+  .readout-day { font-weight: 400; }
   .readout-label {
     font: 500 11px var(--display);
     letter-spacing: 0.14em;
@@ -241,7 +242,7 @@
 <header class="caption">
   <div class="readout-wrap">
     <div class="readout-label" id="readout-label" hidden></div>
-    <div class="readout" id="readout">--:--:--</div>
+    <div class="readout"><span class="readout-day" id="readout-day"></span><span id="readout">--:--:--</span></div>
   </div>
 </header>
 
@@ -1190,16 +1191,18 @@ function hms(sec, { tenths = false, twelve = false } = {}) {
 
 const readout = document.getElementById('readout');
 const readoutLabel = document.getElementById('readout-label');
+const readoutDay = document.getElementById('readout-day');
 const shown = new WeakMap();
 function setText(el, text) {
   if (shown.get(el) !== text) { el.textContent = text; shown.set(el, text); }
 }
 const DAY = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
 function updateReadout() {
-  let text, label;
+  let text, label, day = '';
   if (T.mode === 'clock') {
     const s = clockSeconds();
-    text = `${DAY.format(new Date(Date.now() + T.offset * 1000))} ${hms(s, { twelve: true })} ${s < HALF_DAY ? 'AM' : 'PM'}`;
+    day = `${DAY.format(new Date(Date.now() + T.offset * 1000))} `;
+    text = `${hms(s, { twelve: true })} ${s < HALF_DAY ? 'AM' : 'PM'}`;
     label = '';
   } else if (T.mode === 'stopwatch') {
     text = hms(stopwatchElapsed(), { tenths: true });
@@ -1208,10 +1211,11 @@ function updateReadout() {
     text = hms(Math.ceil(timerRemaining()));
     label = T.tm.done ? 'Timer \u00b7 done' : T.tm.running ? 'Timer \u00b7 counting down' : 'Timer';
   }
+  setText(readoutDay, day);
   setText(readout, text);
   setText(readoutLabel, label);
   readoutLabel.hidden = !label;
-  readout.classList.toggle('alarm', T.mode === 'timer' && T.tm.done);
+  readout.parentElement.classList.toggle('alarm', T.mode === 'timer' && T.tm.done);
 }
 
 function ringTargets() {
