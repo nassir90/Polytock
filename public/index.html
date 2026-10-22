@@ -25,50 +25,29 @@
   [hidden] { display: none !important; }
 
   .reels {
-    max-width: 1080px;
     margin: 0 auto;
-    padding: calc(env(safe-area-inset-top, 0px) + 48px) 24px 56px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: clamp(24px, 3.5vw, 40px);
+    padding: calc(env(safe-area-inset-top, 0px) + 40px) 16px 48px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 360px));
+    justify-content: center;
+    gap: clamp(12px, 2.5vw, 24px);
+    align-items: start;
   }
-  .site-head { text-align: center; }
+  .site-head {
+    aspect-ratio: 1 / 1;
+    display: grid;
+    place-items: center;
+    container-type: inline-size;
+  }
   .site-title {
     margin: 0;
-    font: 500 clamp(56px, 11vw, 128px)/0.95 var(--display);
+    font: 500 15cqi/1 var(--display);
     letter-spacing: 0.04em;
     text-transform: uppercase;
   }
-  .reel { margin: 0; position: relative; width: min(360px, 100%); }
-  .reel-frame { position: relative; aspect-ratio: 1 / 1; border-radius: 16px; overflow: hidden; background: var(--ink); }
+  .reel { margin: 0; min-width: 0; }
+  .reel-frame { width: 100%; aspect-ratio: 1 / 1; border-radius: 14px; overflow: hidden; background: var(--ink); }
   .reel video { display: block; width: 100%; height: 100%; object-fit: cover; }
-  .reel-sound {
-    position: absolute;
-    left: calc(100% + 12px);
-    bottom: 0;
-    width: 40px;
-    height: 40px;
-    padding: 0;
-    display: grid;
-    place-items: center;
-    border: 1px solid rgba(28, 29, 32, 0.25);
-    border-radius: 999px;
-    background: transparent;
-    color: var(--ink);
-    cursor: pointer;
-  }
-  .reel-sound:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
-  .reel-sound svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-  .reel-sound[aria-pressed="true"] { background: var(--ink); color: var(--glyph); border-color: var(--ink); }
-  .reel-sound .wave { display: none; }
-  .reel-sound[aria-pressed="true"] .wave { display: inline; }
-  .reel-sound[aria-pressed="true"] .mute { display: none; }
-  @media (max-width: 520px) {
-    .reel { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
-    .reel-frame { width: 100%; }
-    .reel-sound { position: static; }
-  }
   .exhibit {
     position: relative;
     height: 100svh;
@@ -226,7 +205,6 @@
     <div class="reel-frame">
       <video src="videos/promo-1-throw.mp4" poster="videos/promo-1-throw.jpg" muted loop playsinline preload="metadata" aria-label="A clock you can throw"></video>
     </div>
-    <button class="reel-sound" type="button" aria-pressed="false" aria-label="Sound"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path class="mute" d="M16 9.5l5 5M21 9.5l-5 5"/><path class="wave" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></svg></button>
   </figure>
   <header class="site-head">
     <h1 class="site-title">Polytock</h1>
@@ -235,25 +213,21 @@
     <div class="reel-frame">
       <video src="videos/promo-2-spin.mp4" poster="videos/promo-2-spin.jpg" muted loop playsinline preload="metadata" aria-label="Spin the hands"></video>
     </div>
-    <button class="reel-sound" type="button" aria-pressed="false" aria-label="Sound"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path class="mute" d="M16 9.5l5 5M21 9.5l-5 5"/><path class="wave" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></svg></button>
   </figure>
   <figure class="reel">
     <div class="reel-frame">
       <video src="videos/promo-3-family.mp4" poster="videos/promo-3-family.jpg" muted loop playsinline preload="metadata" aria-label="The clock family"></video>
     </div>
-    <button class="reel-sound" type="button" aria-pressed="false" aria-label="Sound"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path class="mute" d="M16 9.5l5 5M21 9.5l-5 5"/><path class="wave" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></svg></button>
   </figure>
   <figure class="reel">
     <div class="reel-frame">
       <video src="videos/promo-4-daynight.mp4" poster="videos/promo-4-daynight.jpg" muted loop playsinline preload="metadata" aria-label="Day to night"></video>
     </div>
-    <button class="reel-sound" type="button" aria-pressed="false" aria-label="Sound"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path class="mute" d="M16 9.5l5 5M21 9.5l-5 5"/><path class="wave" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></svg></button>
   </figure>
   <figure class="reel">
     <div class="reel-frame">
       <video src="videos/promo-5-timer.mp4" poster="videos/promo-5-timer.jpg" muted loop playsinline preload="metadata" aria-label="Timer and stopwatch"></video>
     </div>
-    <button class="reel-sound" type="button" aria-pressed="false" aria-label="Sound"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path class="mute" d="M16 9.5l5 5M21 9.5l-5 5"/><path class="wave" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></svg></button>
   </figure>
 </section>
 
@@ -2051,29 +2025,10 @@ build().then(() => {
 </script>
 
 <script>
-const reels = [...document.querySelectorAll('.reel')];
-function setSound(card, on) {
-  card.querySelector('video').muted = !on;
-  card.querySelector('.reel-sound').setAttribute('aria-pressed', String(on));
-}
-for (const card of reels) {
-  const video = card.querySelector('video');
-  setSound(card, false);
-  card.querySelector('.reel-sound').addEventListener('click', () => {
-    const on = video.muted;
-    for (const other of reels) setSound(other, false);
-    setSound(card, on);
-    if (on) { video.currentTime = 0; video.play().catch(() => {}); }
-  });
-}
 const reelWatch = new IntersectionObserver((entries) => {
-  for (const e of entries) {
-    const video = e.target;
-    if (e.isIntersecting) video.play().catch(() => {});
-    else { video.pause(); setSound(video.closest('.reel'), false); }
-  }
+  for (const e of entries) e.isIntersecting ? e.target.play().catch(() => {}) : e.target.pause();
 }, { threshold: 0.4 });
-for (const card of reels) reelWatch.observe(card.querySelector('video'));
+for (const video of document.querySelectorAll('.reel video')) reelWatch.observe(video);
 </script>
 </body>
 </html>
