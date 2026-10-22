@@ -147,13 +147,7 @@
     gap: 16px;
     pointer-events: none;
   }
-  .caption p {
-    margin: 0;
-    font-size: 13px;
-    color: var(--ink-soft);
-    max-width: 34ch;
-  }
-  .readout-wrap { text-align: right; }
+  .readout-wrap { margin-left: auto; text-align: right; }
   .readout-label {
     font: 500 11px var(--display);
     letter-spacing: 0.14em;
@@ -257,12 +251,11 @@
     font: 400 13px var(--mono); color: var(--ink-soft); pointer-events: none;
   }
   @media (max-width: 520px) {
-    .caption p { display: none; }
     .readout { font-size: 22px; }
     .tools { margin-left: 0; }
   }
   body.night .caption { color: #eef1f6; }
-  body.night .caption p, body.night .readout-label { color: #b9c1cf; }
+  body.night .readout-label { color: #b9c1cf; }
   @media (prefers-reduced-motion: reduce) {
     .readout.alarm { animation: none; }
   }
@@ -358,11 +351,8 @@
 <div class="status" id="status">Machining the cube</div>
 
 <header class="caption">
-  <div>
-    <p id="hint">Drag a ring to set the time, or a body to pull it. Click or shift-click clocks to select them, then stand them up or drag them together.</p>
-  </div>
   <div class="readout-wrap">
-    <div class="readout-label" id="readout-label">Clock</div>
+    <div class="readout-label" id="readout-label" hidden></div>
     <div class="readout" id="readout">--:--:--</div>
   </div>
 </header>
@@ -1320,8 +1310,8 @@ function updateReadout() {
   let text, label;
   if (T.mode === 'clock') {
     const s = clockSeconds();
-    text = hms(s, { twelve: true });
-    label = `Clock \u00b7 ${s < HALF_DAY ? 'AM' : 'PM'}`;
+    text = `${hms(s, { twelve: true })} ${s < HALF_DAY ? 'AM' : 'PM'}`;
+    label = '';
   } else if (T.mode === 'stopwatch') {
     text = hms(stopwatchElapsed(), { tenths: true });
     label = T.sw.running ? 'Stopwatch \u00b7 running' : 'Stopwatch';
@@ -1331,6 +1321,7 @@ function updateReadout() {
   }
   setText(readout, text);
   setText(readoutLabel, label);
+  readoutLabel.hidden = !label;
   readout.classList.toggle('alarm', T.mode === 'timer' && T.tm.done);
 }
 
@@ -1386,18 +1377,12 @@ function chime() {
 }
 
 const $ = (id) => document.getElementById(id);
-const HINTS = {
-  clock: 'Drag a ring to set the time, or a body to pull it. Click or shift-click clocks to select them, then stand them up or drag them together.',
-  stopwatch: 'The rings count up: hours, minutes, and the cap sweeps the seconds.',
-  timer: 'Pick a length or drag the rings to set it. The rings unwind until each body is whole again.',
-};
 function setMode(mode) {
   T.mode = mode;
   for (const m of MODES) {
     $('tab-' + m).setAttribute('aria-pressed', String(m === mode));
     $('panel-' + m).hidden = m !== mode;
   }
-  $('hint').textContent = HINTS[mode];
 }
 for (const m of MODES) $('tab-' + m).addEventListener('click', () => setMode(m));
 
