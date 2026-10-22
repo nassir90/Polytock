@@ -88,7 +88,7 @@
     gap: 16px;
     pointer-events: none;
   }
-  .readout-wrap { margin-left: auto; text-align: right; }
+  .readout-wrap { text-align: left; }
   .readout-label {
     font: 500 11px var(--display);
     letter-spacing: 0.14em;
@@ -1194,11 +1194,12 @@ const shown = new WeakMap();
 function setText(el, text) {
   if (shown.get(el) !== text) { el.textContent = text; shown.set(el, text); }
 }
+const DAY = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
 function updateReadout() {
   let text, label;
   if (T.mode === 'clock') {
     const s = clockSeconds();
-    text = `${hms(s, { twelve: true })} ${s < HALF_DAY ? 'AM' : 'PM'}`;
+    text = `${DAY.format(new Date(Date.now() + T.offset * 1000))} ${hms(s, { twelve: true })} ${s < HALF_DAY ? 'AM' : 'PM'}`;
     label = '';
   } else if (T.mode === 'stopwatch') {
     text = hms(stopwatchElapsed(), { tenths: true });
