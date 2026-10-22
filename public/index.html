@@ -35,15 +35,8 @@
     letter-spacing: 0.04em;
     text-transform: uppercase;
   }
-  .site-lede {
-    margin: 18px 0 0;
-    max-width: 52ch;
-    font-size: 17px;
-    line-height: 1.55;
-    color: var(--ink-soft);
-  }
   .site-credit {
-    margin: 12px 0 0;
+    margin: 18px 0 0;
     max-width: 60ch;
     font-size: 14px;
     line-height: 1.5;
@@ -82,13 +75,6 @@
   .reel-frame { position: relative; aspect-ratio: 1 / 1; border-radius: 16px; overflow: hidden; background: var(--ink); }
   .reel video { display: block; width: 100%; height: 100%; object-fit: cover; }
   .reel-text { min-width: 0; }
-  .reel-num {
-    margin: 0 0 8px;
-    font: 500 12px var(--mono);
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    color: var(--ink-soft);
-  }
   .reel-title { margin: 0 0 16px; font: 500 clamp(28px, 3.4vw, 40px)/1.1 var(--display); }
   .reel-lines { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
   .reel-lines li {
@@ -285,7 +271,6 @@
 <body>
 <header class="site-head">
   <h1 class="site-title">Polytock</h1>
-  <p class="site-lede">A black cube clock with one corner cut away. Three triangular rings tell the time; you can turn them, throw the whole thing, drop in more clocks and take them outside. Watch the five short films, then play with it below.</p>
   <p class="site-credit">Based on a clock shown in <a href="https://www.instagram.com/reel/Dd2_EWny62a/" rel="noopener">a reel</a> posted by <a href="https://www.instagram.com/sushi_watches/" rel="noopener">@sushi_watches</a> on Instagram.</p>
   <a class="site-jump" href="#exhibit">Play with it</a>
 </header>
@@ -296,7 +281,6 @@
       <video src="videos/promo-1-throw.mp4" poster="videos/promo-1-throw.jpg" muted loop playsinline preload="metadata" aria-label="A clock you can throw"></video>
     </div>
     <div class="reel-text">
-      <p class="reel-num">Film 1 of 5</p>
       <h2 class="reel-title">A clock you can throw</h2>
       <ul class="reel-lines">
         <li data-start="0.50" data-end="5.09">This is Polytock. A clock you can pick up and throw.</li>
@@ -312,7 +296,6 @@
       <video src="videos/promo-2-spin.mp4" poster="videos/promo-2-spin.jpg" muted loop playsinline preload="metadata" aria-label="Spin the hands"></video>
     </div>
     <div class="reel-text">
-      <p class="reel-num">Film 2 of 5</p>
       <h2 class="reel-title">Spin the hands</h2>
       <ul class="reel-lines">
         <li data-start="0.50" data-end="5.61">Three rings tell the time: hours, minutes and seconds.</li>
@@ -328,7 +311,6 @@
       <video src="videos/promo-3-family.mp4" poster="videos/promo-3-family.jpg" muted loop playsinline preload="metadata" aria-label="The clock family"></video>
     </div>
     <div class="reel-text">
-      <p class="reel-num">Film 3 of 5</p>
       <h2 class="reel-title">The clock family</h2>
       <ul class="reel-lines">
         <li data-start="0.50" data-end="3.21">Polytock isn't only a cube.</li>
@@ -344,7 +326,6 @@
       <video src="videos/promo-4-daynight.mp4" poster="videos/promo-4-daynight.jpg" muted loop playsinline preload="metadata" aria-label="Day to night"></video>
     </div>
     <div class="reel-text">
-      <p class="reel-num">Film 4 of 5</p>
       <h2 class="reel-title">Day to night</h2>
       <ul class="reel-lines">
         <li data-start="0.50" data-end="2.73">Take the clocks outside.</li>
@@ -360,7 +341,6 @@
       <video src="videos/promo-5-timer.mp4" poster="videos/promo-5-timer.jpg" muted loop playsinline preload="metadata" aria-label="Timer and stopwatch"></video>
     </div>
     <div class="reel-text">
-      <p class="reel-num">Film 5 of 5</p>
       <h2 class="reel-title">Timer and stopwatch</h2>
       <ul class="reel-lines">
         <li data-start="0.50" data-end="3.09">Polytock is a stopwatch, too.</li>
