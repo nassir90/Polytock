@@ -1,6 +1,6 @@
 # Polytock
 
-WebGL model of [@sushi_watches](https://www.instagram.com/sushi_watches/)' [corner-cut cube clock](https://www.instagram.com/reel/Dd2_EWny62a/). Turn the rings, throw the clocks around, and use it as a stopwatch or timer.
+Cool 3D clock concept I found while scrolling reels: [this one](https://www.instagram.com/reel/Dd2_EWny62a/) by [@sushi_watches](https://www.instagram.com/sushi_watches/).
 
 **Live:** [mpts.ie/games/polytock](https://mpts.ie/games/polytock/)
 
