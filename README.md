@@ -191,3 +191,7 @@ src/worker.js       serves the app under /games/polytock
 wrangler.jsonc      Worker, assets and routes
 docs/images/        README images, rendered from the app
 ```
+
+## License
+
+The code is [MIT](LICENSE). The clock design belongs to [@sushi_watches](https://www.instagram.com/sushi_watches/) and is not covered by it.
