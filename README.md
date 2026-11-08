@@ -29,7 +29,6 @@ The hours are on the lower ring, the minutes on the middle ring, and the cap swe
 ```bash
 npm install
 npm run dev      # local dev server
-npm run deploy   # deploy the Cloudflare Worker
 ```
 
 ## License
